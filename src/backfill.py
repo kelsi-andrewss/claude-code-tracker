@@ -50,7 +50,7 @@ for jf in jsonl_files:
     inp = out = cache_create = cache_read = 0
     model = "unknown"
     first_ts = None
-    last_ts = None
+    msgs = []
 
     try:
         with open(jf) as f:
@@ -58,10 +58,13 @@ for jf in jsonl_files:
                 try:
                     obj = json.loads(line)
                     ts = obj.get("timestamp")
-                    if ts:
-                        if first_ts is None:
-                            first_ts = ts
-                        last_ts = ts
+                    if ts and first_ts is None:
+                        first_ts = ts
+                    t = obj.get("type")
+                    if t == "user" and not obj.get("isSidechain") and ts:
+                        msgs.append(("user", ts))
+                    elif t == "assistant" and ts:
+                        msgs.append(("assistant", ts))
                     msg = obj.get("message", {})
                     if isinstance(msg, dict) and msg.get("role") == "assistant":
                         usage = msg.get("usage", {})
@@ -94,15 +97,22 @@ for jf in jsonl_files:
     if not session_date:
         session_date = datetime.fromtimestamp(os.path.getmtime(jf)).strftime("%Y-%m-%d")
 
-    # Duration
+    # Duration: sum of per-turn active thinking time (user -> first assistant reply)
     duration = 0
-    if first_ts and last_ts:
-        try:
-            t0 = datetime.fromisoformat(first_ts.replace("Z", "+00:00"))
-            t1 = datetime.fromisoformat(last_ts.replace("Z", "+00:00"))
-            duration = max(0, int((t1 - t0).total_seconds()))
-        except Exception:
-            pass
+    i = 0
+    while i < len(msgs):
+        if msgs[i][0] == "user":
+            j = i + 1
+            while j < len(msgs) and msgs[j][0] != "assistant":
+                j += 1
+            if j < len(msgs):
+                try:
+                    t0 = datetime.fromisoformat(msgs[i][1].replace("Z", "+00:00"))
+                    t1 = datetime.fromisoformat(msgs[j][1].replace("Z", "+00:00"))
+                    duration += max(0, int((t1 - t0).total_seconds()))
+                except Exception:
+                    pass
+        i += 1
 
     # Cost
     if "opus" in model:

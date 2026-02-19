@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.1.7] - 2026-02-19
+
+### Fixed
+- **Backfill duration accuracy** — `backfill.py` was computing `duration_seconds` as wall-clock session time (`last_ts - first_ts`), which included idle time between prompts. Now uses per-turn active thinking time (sum of user-to-assistant gaps), matching the stop-hook and `patch-durations.py`.
+
 ## [1.1.6] - 2026-02-19
 
 ### Fixed

@@ -30,8 +30,11 @@ The `postinstall` script copies the tracking scripts to `~/.claude/tracking/` an
 
 ### Option 2 — Homebrew
 
+Homebrew only knows about packages in its default registry. `brew tap` adds a third-party repository so Homebrew can find this package.
+
 ```bash
-brew install kelsi-andrewss/claude-code-tracker/claude-code-tracker
+brew tap kelsi-andrewss/claude-code-tracker
+brew install claude-code-tracker
 ```
 
 ### Option 3 — git clone

@@ -9,7 +9,7 @@ echo "Installing claude-code-tracker..."
 
 # Copy scripts
 mkdir -p "$INSTALL_DIR"
-cp "$SCRIPT_DIR/src/"*.sh "$SCRIPT_DIR/src/"*.py "$INSTALL_DIR/"
+cp -f "$SCRIPT_DIR/src/"*.sh "$SCRIPT_DIR/src/"*.py "$INSTALL_DIR/"
 chmod +x "$INSTALL_DIR/"*.sh "$INSTALL_DIR/"*.py
 
 echo "Scripts installed to $INSTALL_DIR"

@@ -7,11 +7,21 @@ SETTINGS="$HOME/.claude/settings.json"
 
 echo "Installing claude-code-tracker..."
 
-# Copy scripts
+# Install scripts
 mkdir -p "$INSTALL_DIR"
-rm -f "$INSTALL_DIR/"*.sh "$INSTALL_DIR/"*.py
-cp "$SCRIPT_DIR/src/"*.sh "$SCRIPT_DIR/src/"*.py "$INSTALL_DIR/"
-chmod +x "$INSTALL_DIR/"*.sh "$INSTALL_DIR/"*.py
+
+# Detect Homebrew install (SCRIPT_DIR is inside a Cellar path)
+if [[ "$SCRIPT_DIR" == */Cellar/* ]]; then
+  # Symlink scripts — avoids macOS provenance xattr issues on upgrade
+  for f in "$SCRIPT_DIR/src/"*.sh "$SCRIPT_DIR/src/"*.py; do
+    ln -sf "$f" "$INSTALL_DIR/$(basename "$f")"
+  done
+else
+  # Direct copy for npm / git-clone installs
+  rm -f "$INSTALL_DIR/"*.sh "$INSTALL_DIR/"*.py 2>/dev/null || true
+  cp "$SCRIPT_DIR/src/"*.sh "$SCRIPT_DIR/src/"*.py "$INSTALL_DIR/"
+  chmod +x "$INSTALL_DIR/"*.sh "$INSTALL_DIR/"*.py
+fi
 
 echo "Scripts installed to $INSTALL_DIR"
 

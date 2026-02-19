@@ -131,7 +131,7 @@ echo ""
 
 echo "--- Push ---"
 
-git push origin main --tags
+git push origin main "$TAG"
 echo "  pushed main + tags"
 echo ""
 

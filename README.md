@@ -32,7 +32,7 @@ The `postinstall` script copies the tracking scripts to `~/.claude/tracking/` an
 
 ```bash
 brew tap kelsi-andrewss/claude-code-tracker
-brew install claude-code-tracker
+brew install kelsi-andrewss/claude-code-tracker/claude-code-tracker
 ```
 
 ### Option 3 — git clone

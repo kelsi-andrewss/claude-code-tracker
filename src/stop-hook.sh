@@ -33,7 +33,7 @@ fi
 # Parse token usage from JSONL and update tokens.json
 python3 - "$TRANSCRIPT" "$TRACKING_DIR/tokens.json" "$SESSION_ID" "$(basename "$PROJECT_ROOT")" <<'PYEOF'
 import sys, json, os
-from datetime import date
+from datetime import date, datetime
 
 transcript_path = sys.argv[1]
 tokens_file = sys.argv[2]
@@ -44,10 +44,17 @@ today = date.today().isoformat()
 # Sum all token usage from assistant messages in this session
 inp = out = cache_create = cache_read = 0
 model = "unknown"
+msgs = []
 with open(transcript_path) as f:
     for line in f:
         try:
             obj = json.loads(line)
+            t = obj.get('type')
+            ts = obj.get('timestamp')
+            if t == 'user' and not obj.get('isSidechain') and ts:
+                msgs.append(('user', ts))
+            elif t == 'assistant' and ts:
+                msgs.append(('assistant', ts))
             msg = obj.get('message', {})
             if isinstance(msg, dict) and msg.get('role') == 'assistant':
                 usage = msg.get('usage', {})
@@ -61,6 +68,23 @@ with open(transcript_path) as f:
                     model = m
         except:
             pass
+
+# Compute active time: sum of (first assistant reply - user message) per turn
+duration = 0
+i = 0
+while i < len(msgs):
+    if msgs[i][0] == 'user':
+        j = i + 1
+        while j < len(msgs) and msgs[j][0] != 'assistant':
+            j += 1
+        if j < len(msgs):
+            try:
+                t0 = datetime.fromisoformat(msgs[i][1].replace('Z', '+00:00'))
+                t1 = datetime.fromisoformat(msgs[j][1].replace('Z', '+00:00'))
+                duration += max(0, int((t1 - t0).total_seconds()))
+            except:
+                pass
+    i += 1
 
 total = inp + cache_create + cache_read + out
 if 'opus' in model:
@@ -88,7 +112,8 @@ entry = {
     "output_tokens": out,
     "total_tokens": total,
     "estimated_cost_usd": round(cost, 4),
-    "model": model
+    "model": model,
+    "duration_seconds": duration
 }
 
 # Update existing or append new

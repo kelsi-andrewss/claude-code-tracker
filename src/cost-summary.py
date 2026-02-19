@@ -3,24 +3,46 @@
 Usage:
   python3 cost-summary.py <tokens.json>
   python3 cost-summary.py  (defaults to .claude/tracking/tokens.json in cwd's git root)
+  python3 cost-summary.py --chart  (open tracking charts in browser)
 """
 import sys
 import json
 import os
+import webbrowser
 from collections import defaultdict
 from datetime import date
 
-def find_tokens_file():
-    cwd = os.getcwd()
-    root = cwd
+def find_git_root():
+    root = os.getcwd()
     while root != "/":
         if os.path.isdir(os.path.join(root, ".git")):
-            break
+            return root
         root = os.path.dirname(root)
+    return root
+
+def find_tokens_file():
+    root = find_git_root()
     path = os.path.join(root, ".claude", "tracking", "tokens.json")
     if os.path.exists(path):
         return path
     sys.exit(f"No tokens.json found at {path}")
+
+def format_duration(seconds):
+    if seconds <= 0:
+        return "0m"
+    h = seconds // 3600
+    m = (seconds % 3600) // 60
+    s = seconds % 60
+    if h > 0:
+        return f"{h}h {m}m"
+    return f"{m}m {s}s"
+
+if "--chart" in sys.argv:
+    chart = os.path.join(find_git_root(), ".claude", "tracking", "charts.html")
+    if not os.path.exists(chart):
+        sys.exit(f"No charts.html found at {chart} — run generate-charts.py first")
+    webbrowser.open(f"file://{chart}")
+    sys.exit(0)
 
 tokens_file = sys.argv[1] if len(sys.argv) > 1 else find_tokens_file()
 
@@ -32,7 +54,7 @@ if not data:
     sys.exit(0)
 
 # --- Aggregate ---
-by_date = defaultdict(lambda: {"cost": 0, "sessions": 0, "output": 0, "cache_read": 0, "cache_create": 0, "input": 0})
+by_date = defaultdict(lambda: {"cost": 0, "sessions": 0, "output": 0, "cache_read": 0, "cache_create": 0, "input": 0, "duration": 0})
 by_model = defaultdict(lambda: {"cost": 0, "sessions": 0})
 total_cost = 0
 total_sessions = len(data)
@@ -50,6 +72,7 @@ for e in data:
     by_date[d]["cache_read"] += e.get("cache_read_tokens", 0)
     by_date[d]["cache_create"] += e.get("cache_creation_tokens", 0)
     by_date[d]["input"] += e.get("input_tokens", 0)
+    by_date[d]["duration"] += e.get("duration_seconds", 0)
 
     by_model[short_model]["cost"] += cost
     by_model[short_model]["sessions"] += 1
@@ -70,11 +93,11 @@ print(f"  Cost Summary — {os.path.basename(os.path.dirname(os.path.dirname(tok
 print("=" * W)
 
 print(f"\nBy date:")
-print(f"  {'Date':<12} {'Sessions':>8} {'Output':>10} {'Cache Read':>12} {'Cost':>10}")
-print(f"  {'-'*12} {'-'*8} {'-'*10} {'-'*12} {'-'*10}")
+print(f"  {'Date':<12} {'Sessions':>8} {'Output':>10} {'Cache Read':>12} {'Duration':>10} {'Cost':>10}")
+print(f"  {'-'*12} {'-'*8} {'-'*10} {'-'*12} {'-'*10} {'-'*10}")
 for d in sorted(by_date):
     r = by_date[d]
-    print(f"  {d:<12} {r['sessions']:>8} {r['output']:>10,} {r['cache_read']:>12,} ${r['cost']:>9.2f}")
+    print(f"  {d:<12} {r['sessions']:>8} {r['output']:>10,} {r['cache_read']:>12,} {format_duration(r['duration']):>10} ${r['cost']:>9.2f}")
 
 print(f"\nBy model:")
 print(f"  {'Model':<30} {'Sessions':>8} {'Cost':>10}")
@@ -89,6 +112,8 @@ print(f"  Input tokens:      {total_input:>12,}")
 print(f"  Cache write:       {total_cache_create:>12,}")
 print(f"  Cache read:        {total_cache_read:>12,}")
 print(f"  Output tokens:     {total_output:>12,}")
+total_duration = sum(e.get("duration_seconds", 0) for e in data)
+print(f"  Session time:      {format_duration(total_duration):>12}")
 print(f"  Estimated cost:    ${total_cost:>11.2f}")
 
 if total_output > 0:

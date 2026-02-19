@@ -174,6 +174,24 @@ git push origin main
 echo "  pushed formula update"
 echo ""
 
+# --- Update Homebrew tap repo ---
+
+echo "--- Update tap repo ---"
+
+tap_sha=$(gh api repos/$REPO/contents/Formula/claude-code-tracker.rb --jq '.sha' 2>/dev/null || true)
+if [[ -n "$tap_sha" ]]; then
+  tap_content=$(base64 -i "$FORMULA")
+  gh api --method PUT repos/kelsi-andrewss/homebrew-claude-code-tracker/contents/Formula/claude-code-tracker.rb \
+    --field message="update formula to $TAG" \
+    --field content="$tap_content" \
+    --field sha="$(gh api repos/kelsi-andrewss/homebrew-claude-code-tracker/contents/Formula/claude-code-tracker.rb --jq '.sha')" \
+    --jq '.commit.html_url'
+  echo "  updated tap repo"
+else
+  echo "  warning: could not update tap repo"
+fi
+echo ""
+
 # --- npm publish ---
 
 echo "--- npm publish ---"

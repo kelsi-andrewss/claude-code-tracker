@@ -1,6 +1,6 @@
 {
   "name": "claude-code-tracker",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Automatic token, cost, and prompt tracking for Claude Code sessions",
   "keywords": [
     "claude",

@@ -35,7 +35,10 @@ Homebrew only knows about packages in its default registry. `brew tap` adds a th
 ```bash
 brew tap kelsi-andrewss/claude-code-tracker
 brew install claude-code-tracker
+claude-tracker-setup
 ```
+
+The `claude-tracker-setup` command registers the Stop hook in `~/.claude/settings.json`. This must be run separately because Homebrew's install sandbox blocks writes to user directories.
 
 ### Option 3 — git clone
 

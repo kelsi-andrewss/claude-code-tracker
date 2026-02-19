@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PREFIX="$(brew --prefix claude-code-tracker 2>/dev/null)" || {
+  echo "Error: claude-code-tracker not found via Homebrew." >&2
+  echo "If you installed via npm or git clone, run install.sh directly." >&2
+  exit 1
+}
+
+exec "$PREFIX/libexec/install.sh"

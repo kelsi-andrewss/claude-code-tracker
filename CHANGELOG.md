@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.6] - 2026-02-19
+
+### Fixed
+- **Homebrew install** — `post_install` ran inside Homebrew's `sandbox-exec` jail which blocks all writes to `~/.claude/`. Removed `post_install` entirely. Users now run `claude-tracker-setup` after `brew install` to register the hook. The hook points at the stable `/opt/homebrew/opt/` libexec path, which survives `brew upgrade` without any writes to user directories.
+
+### Added
+- **`claude-tracker-setup`** — new setup command installed to Homebrew's `bin/`. Runs `install.sh` outside the sandbox to patch `settings.json` and `CLAUDE.md`.
+
 ## [1.1.4] - 2026-02-19
 
 ### Fixed

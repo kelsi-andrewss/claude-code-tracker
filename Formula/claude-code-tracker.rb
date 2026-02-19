@@ -11,17 +11,14 @@ class ClaudeCodeTracker < Formula
     (libexec/"src").install Dir["src/*"]
     libexec.install "install.sh"
     libexec.install "uninstall.sh"
+    bin.install "bin/claude-tracker-setup"
     bin.write_exec_script libexec/"src/cost-summary.py"
-  end
-
-  def post_install
-    system "#{libexec}/install.sh"
   end
 
   def caveats
     <<~EOS
-      claude-code-tracker has been installed and the Stop hook registered.
-      Restart Claude Code to activate session tracking.
+      Run the setup command to register the Claude Code hook:
+        claude-tracker-setup
 
       To view cost summaries:
         claude-tracker-cost

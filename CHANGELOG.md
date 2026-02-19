@@ -3,7 +3,7 @@
 ## [1.1.4] - 2026-02-19
 
 ### Fixed
-- **Homebrew upgrade** — `brew upgrade` no longer fails with a provenance xattr error. macOS Ventura+ attaches a SIP-protected `com.apple.provenance` attribute to Homebrew-installed files, which blocked `rm`/`cp` on upgrade. `install.sh` now detects a Cellar path and uses `ln -sf` (symlinks) instead of copying. Symlinks carry no xattrs and auto-resolve to the updated cellar version after each upgrade. Non-Homebrew installs (npm, git clone) are unaffected.
+- **Homebrew upgrade** — `brew upgrade` no longer fails with a provenance xattr error. macOS Ventura+ attaches a SIP-protected `com.apple.provenance` attribute to Homebrew-installed files, which blocked `rm`/`cp`/`ln -sf` on upgrade. `install.sh` now detects a Cellar path and uses an atomic `ln` + `mv -f` pattern (the `rename` syscall bypasses SIP) to replace files with symlinks. Symlinks carry no xattrs and auto-resolve to the updated cellar version after each upgrade. Non-Homebrew installs (npm, git clone) are unaffected.
 
 ## [1.1.0] - 2026-02-19
 

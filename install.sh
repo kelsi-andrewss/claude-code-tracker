@@ -12,9 +12,14 @@ mkdir -p "$INSTALL_DIR"
 
 # Detect Homebrew install (SCRIPT_DIR is inside a Cellar path)
 if [[ "$SCRIPT_DIR" == */Cellar/* ]]; then
-  # Symlink scripts — avoids macOS provenance xattr issues on upgrade
+  # Symlink scripts — avoids macOS provenance xattr issues on upgrade.
+  # ln -sf fails if the target has com.apple.provenance (SIP-protected),
+  # so create a temp symlink and mv -f (rename syscall bypasses SIP).
   for f in "$SCRIPT_DIR/src/"*.sh "$SCRIPT_DIR/src/"*.py; do
-    ln -sf "$f" "$INSTALL_DIR/$(basename "$f")"
+    dest="$INSTALL_DIR/$(basename "$f")"
+    tmplink=$(mktemp -u "$INSTALL_DIR/.tmp.XXXXXX")
+    ln -s "$f" "$tmplink"
+    mv -f "$tmplink" "$dest"
   done
 else
   # Direct copy for npm / git-clone installs

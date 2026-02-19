@@ -31,14 +31,14 @@ The `postinstall` script copies the tracking scripts to `~/.claude/tracking/` an
 ### Option 2 — Homebrew
 
 ```bash
-brew tap kelsiandrews/claude-code-tracker
+brew tap ${YOUR_USER}/claude-code-tracker
 brew install claude-code-tracker
 ```
 
 ### Option 3 — git clone
 
 ```bash
-git clone https://github.com/kelsiandrews/claude-code-tracker.git
+git clone https://github.com/kelsi-andrewss/claude-code-tracker.git
 cd claude-code-tracker
 ./install.sh
 ```

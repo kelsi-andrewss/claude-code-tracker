@@ -1,7 +1,7 @@
 class ClaudeCodeTracker < Formula
   desc "Automatic token, cost, and prompt tracking for Claude Code sessions"
   homepage "https://github.com/kelsi-andrewss/claude-code-tracker"
-  url "https://github.com/kelsi-andrewss/claude-code-tracker/archive/refs/tags/v1.1.1.tar.gz"
+  url "https://github.com/kelsi-andrewss/claude-code-tracker/archive/refs/tags/v1.1.2.tar.gz"
   sha256 "79916e1d98c32fc2ec6db20c7e9ba58e803cd0e34492422b8c17e97c95a531a7"
   license "MIT"
 

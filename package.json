@@ -2,17 +2,24 @@
   "name": "claude-code-tracker",
   "version": "1.1.0",
   "description": "Automatic token, cost, and prompt tracking for Claude Code sessions",
-  "keywords": ["claude", "claude-code", "anthropic", "tracking", "cost", "tokens"],
+  "keywords": [
+    "claude",
+    "claude-code",
+    "anthropic",
+    "tracking",
+    "cost",
+    "tokens"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/kelsi-andrewss/claude-code-tracker"
+    "url": "git+https://github.com/kelsi-andrewss/claude-code-tracker.git"
   },
   "scripts": {
     "postinstall": "bash ./install.sh"
   },
   "bin": {
-    "claude-tracker-cost": "./src/cost-summary.py"
+    "claude-tracker-cost": "src/cost-summary.py"
   },
   "engines": {
     "node": ">=14"

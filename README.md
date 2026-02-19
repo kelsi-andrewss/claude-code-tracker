@@ -45,6 +45,22 @@ cd claude-code-tracker
 
 Restart Claude Code after any install method.
 
+### Backfilling sessions from before install
+
+The Stop hook only tracks sessions going forward. To capture sessions that ran before you installed:
+
+**Manually** — run the stop hook script against any existing project transcript:
+
+```bash
+CLAUDE_PROJECT_DIR=/path/to/your/project ~/.claude/tracking/stop-hook.sh
+```
+
+**Or ask Claude** — open a session in the project and say:
+
+> "Run `~/.claude/tracking/stop-hook.sh` with `CLAUDE_PROJECT_DIR` set to this project directory to backfill my tracking data."
+
+Claude will run it for you and your `tokens.json` and `charts.html` will update with the historical sessions.
+
 ---
 
 ## What gets created

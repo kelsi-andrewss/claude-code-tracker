@@ -8,10 +8,10 @@ class ClaudeCodeTracker < Formula
   depends_on "python3"
 
   def install
-    libexec.install Dir["src/*"]
+    (libexec/"src").install Dir["src/*"]
     libexec.install "install.sh"
     libexec.install "uninstall.sh"
-    bin.write_exec_script libexec/"cost-summary.py"
+    bin.write_exec_script libexec/"src/cost-summary.py"
   end
 
   def post_install

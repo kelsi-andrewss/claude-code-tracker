@@ -55,31 +55,28 @@ hook_entry = {"type": "command", "command": hook_cmd, "timeout": 30, "async": Tr
 hooks = data.setdefault("hooks", {})
 stop_hooks = hooks.setdefault("Stop", [])
 
-already_stop = any(
-    h.get("command") == hook_cmd
-    for group in stop_hooks for h in group.get("hooks", [])
-)
-if already_stop:
-    print("Hook already registered.")
-else:
-    stop_hooks.append({"hooks": [hook_entry]})
+# Remove any existing stop-hook.sh entries (from npm or brew) and replace with current path
+stop_hooks[:] = [
+    g for g in stop_hooks
+    if not any("stop-hook.sh" in h.get("command", "") for h in g.get("hooks", []))
+]
+stop_hooks.append({"hooks": [hook_entry]})
 
-# SessionStart hook
+# SessionStart hook — same: remove old entries and replace
 backfill_cmd = hook_cmd + " --backfill-only"
 session_hooks = hooks.setdefault("SessionStart", [])
-already_session = any(
-    h.get("command") == backfill_cmd
-    for group in session_hooks for h in group.get("hooks", [])
-)
-if not already_session:
-    session_hooks.append({"hooks": [{"type": "command", "command": backfill_cmd, "timeout": 60, "async": True}]})
+session_hooks[:] = [
+    g for g in session_hooks
+    if not any("stop-hook.sh" in h.get("command", "") for h in g.get("hooks", []))
+]
+session_hooks.append({"hooks": [{"type": "command", "command": backfill_cmd, "timeout": 60, "async": True}]})
 
-# permissions.allow
+# permissions.allow — clean old entries and add current
 allow_entry = f"Bash({hook_cmd}*)"
 perms = data.setdefault("permissions", {})
 allow_list = perms.setdefault("allow", [])
-if allow_entry not in allow_list:
-    allow_list.append(allow_entry)
+allow_list[:] = [e for e in allow_list if "stop-hook.sh" not in e]
+allow_list.append(allow_entry)
 
 os.makedirs(os.path.dirname(os.path.abspath(settings_file)), exist_ok=True)
 with open(settings_file, 'w') as f:

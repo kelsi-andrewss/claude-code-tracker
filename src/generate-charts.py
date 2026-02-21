@@ -204,20 +204,33 @@ tpm_data_js = json.dumps([
     if e.get("duration_seconds", 0) > 0 and e.get("output_tokens", 0) > 0
 ])
 
-# Duration histogram: bucket turns into ranges
-_dur_buckets = [("<5s", 0, 5), ("5–15s", 5, 15), ("15–30s", 15, 30),
-                ("30s–2m", 30, 120), ("2m+", 120, None)]
-_dur_counts = {label: 0 for label, _, _ in _dur_buckets}
-for e in data:
-    d = e.get("duration_seconds", 0)
-    if d <= 0:
-        continue
-    for label, lo, hi in _dur_buckets:
-        if hi is None or d < hi:
-            _dur_counts[label] += 1
-            break
-dur_hist_labels_js = json.dumps([b[0] for b in _dur_buckets])
-dur_hist_values_js = json.dumps([_dur_counts[b[0]] for b in _dur_buckets])
+# Prompt length histogram: bucket turns by duration across multiple ranges
+_dur_ranges = {
+    "30s": [("0–5s", 0, 5), ("5–10s", 5, 10), ("10–15s", 10, 15),
+            ("15–20s", 15, 20), ("20–25s", 20, 25), ("25–30s", 25, 30), ("30s+", 30, None)],
+    "60s": [("0–10s", 0, 10), ("10–20s", 10, 20), ("20–30s", 20, 30),
+            ("30–40s", 30, 40), ("40–50s", 40, 50), ("50–60s", 50, 60), ("60s+", 60, None)],
+    "30m": [("0–5m", 0, 300), ("5–10m", 300, 600), ("10–15m", 600, 900),
+            ("15–20m", 900, 1200), ("20–25m", 1200, 1500), ("25–30m", 1500, 1800), ("30m+", 1800, None)],
+    "60m": [("0–10m", 0, 600), ("10–20m", 600, 1200), ("20–30m", 1200, 1800),
+            ("30–40m", 1800, 2400), ("40–50m", 2400, 3000), ("50–60m", 3000, 3600), ("60m+", 3600, None)],
+}
+_dur_all = {}
+for rkey, buckets in _dur_ranges.items():
+    counts = {label: 0 for label, _, _ in buckets}
+    for e in data:
+        d = e.get("duration_seconds", 0)
+        if d <= 0:
+            continue
+        for label, lo, hi in buckets:
+            if hi is None or d < hi:
+                counts[label] += 1
+                break
+    _dur_all[rkey] = {
+        "labels": [b[0] for b in buckets],
+        "values": [counts[b[0]] for b in buckets],
+    }
+dur_hist_ranges_js = json.dumps(_dur_all)
 
 model_labels_js = json.dumps(list(by_model.keys()))
 model_costs_js = json.dumps([round(by_model[m]["cost"], 4) for m in by_model])
@@ -433,7 +446,16 @@ html = f"""<!DOCTYPE html>
     </div>
 
     <div class="card">
-      <h2>Prompt length distribution</h2>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <h2 style="margin-bottom:0">Prompt length distribution</h2>
+        <select id="durRange" style="background:#0f1521;color:#94a3b8;border:1px solid #2d3748;
+          border-radius:6px;padding:4px 8px;font-size:0.75rem;cursor:pointer">
+          <option value="30s" selected>0–30s</option>
+          <option value="60s">0–60s</option>
+          <option value="30m">0–30m</option>
+          <option value="60m">0–60m</option>
+        </select>
+      </div>
       <canvas id="durationDist"></canvas>
     </div>
 
@@ -478,8 +500,7 @@ const CUMUL_DURATION = {cumul_duration_js};
 const AVG_DURATION_BY_DATE = {avg_duration_by_date_js};
 const SCATTER_DATA = {scatter_data_js};
 const TPM_DATA = {tpm_data_js};
-const DUR_HIST_LABELS = {dur_hist_labels_js};
-const DUR_HIST_VALUES = {dur_hist_values_js};
+const DUR_HIST_RANGES = {dur_hist_ranges_js};
 
 function formatDuration(s) {{
   if (s <= 0) return '0s';
@@ -653,17 +674,23 @@ new Chart(document.getElementById('tokensPerMin'), {{
 }});
 
 // Prompt length distribution histogram
-new Chart(document.getElementById('durationDist'), {{
+const durChart = new Chart(document.getElementById('durationDist'), {{
   type: 'bar',
   data: {{
-    labels: DUR_HIST_LABELS,
-    datasets: [{{ label: 'Prompts', data: DUR_HIST_VALUES,
+    labels: DUR_HIST_RANGES['30s'].labels,
+    datasets: [{{ label: 'Prompts', data: DUR_HIST_RANGES['30s'].values,
       backgroundColor: '#34d399', borderRadius: 4 }}]
   }},
   options: {{ ...baseOpts,
     plugins: {{ ...baseOpts.plugins, legend: {{ display: false }} }},
     scales: {{ ...baseOpts.scales,
       y: {{ ...baseOpts.scales.y, ticks: {{ ...baseOpts.scales.y.ticks, stepSize: 1 }} }} }} }}
+}});
+document.getElementById('durRange').addEventListener('change', function() {{
+  const r = DUR_HIST_RANGES[this.value];
+  durChart.data.labels = r.labels;
+  durChart.data.datasets[0].data = r.values;
+  durChart.update();
 }});
 
 // Total vs key prompts per day

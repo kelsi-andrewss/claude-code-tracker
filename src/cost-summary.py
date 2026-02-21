@@ -54,11 +54,13 @@ if not data:
     sys.exit(0)
 
 # --- Aggregate ---
-by_date = defaultdict(lambda: {"cost": 0, "sessions": 0, "output": 0, "cache_read": 0, "cache_create": 0, "input": 0, "duration": 0})
-by_model = defaultdict(lambda: {"cost": 0, "sessions": 0})
+# Each entry is a turn. Sessions = unique session_ids. Prompts = total entries.
+by_date = defaultdict(lambda: {"cost": 0, "prompts": 0, "output": 0, "cache_read": 0, "cache_create": 0, "input": 0, "duration": 0})
+by_model = defaultdict(lambda: {"cost": 0, "prompts": 0})
 total_cost = 0
-total_sessions = len(data)
-sessions_with_tokens = 0
+total_turns = len(data)
+total_sessions = len({e.get("session_id") for e in data})
+sessions_with_tokens = len({e.get("session_id") for e in data if e.get("total_tokens", 0) > 0})
 
 for e in data:
     d = e.get("date", "unknown")
@@ -67,7 +69,7 @@ for e in data:
     short_model = model.split("-20")[0] if "-20" in model else model
 
     by_date[d]["cost"] += cost
-    by_date[d]["sessions"] += 1
+    by_date[d]["prompts"] += 1
     by_date[d]["output"] += e.get("output_tokens", 0)
     by_date[d]["cache_read"] += e.get("cache_read_tokens", 0)
     by_date[d]["cache_create"] += e.get("cache_creation_tokens", 0)
@@ -75,11 +77,9 @@ for e in data:
     by_date[d]["duration"] += e.get("duration_seconds", 0)
 
     by_model[short_model]["cost"] += cost
-    by_model[short_model]["sessions"] += 1
+    by_model[short_model]["prompts"] += 1
 
     total_cost += cost
-    if e.get("total_tokens", 0) > 0:
-        sessions_with_tokens += 1
 
 total_output = sum(e.get("output_tokens", 0) for e in data)
 total_cache_read = sum(e.get("cache_read_tokens", 0) for e in data)
@@ -93,27 +93,28 @@ print(f"  Cost Summary — {os.path.basename(os.path.dirname(os.path.dirname(tok
 print("=" * W)
 
 print(f"\nBy date:")
-print(f"  {'Date':<12} {'Sessions':>8} {'Output':>10} {'Cache Read':>12} {'Duration':>10} {'Cost':>10}")
+print(f"  {'Date':<12} {'Prompts':>8} {'Output':>10} {'Cache Read':>12} {'Duration':>10} {'Cost':>10}")
 print(f"  {'-'*12} {'-'*8} {'-'*10} {'-'*12} {'-'*10} {'-'*10}")
 for d in sorted(by_date):
     r = by_date[d]
-    print(f"  {d:<12} {r['sessions']:>8} {r['output']:>10,} {r['cache_read']:>12,} {format_duration(r['duration']):>10} ${r['cost']:>9.2f}")
+    print(f"  {d:<12} {r['prompts']:>8} {r['output']:>10,} {r['cache_read']:>12,} {format_duration(r['duration']):>10} ${r['cost']:>9.2f}")
 
 print(f"\nBy model:")
-print(f"  {'Model':<30} {'Sessions':>8} {'Cost':>10}")
+print(f"  {'Model':<30} {'Prompts':>8} {'Cost':>10}")
 print(f"  {'-'*30} {'-'*8} {'-'*10}")
 for m in sorted(by_model, key=lambda x: -by_model[x]["cost"]):
     r = by_model[m]
-    print(f"  {m:<30} {r['sessions']:>8} ${r['cost']:>9.2f}")
+    print(f"  {m:<30} {r['prompts']:>8} ${r['cost']:>9.2f}")
 
 print(f"\nTotals:")
 print(f"  Sessions:          {total_sessions:>8}  ({sessions_with_tokens} with token data)")
+print(f"  Prompts:           {total_turns:>8}")
 print(f"  Input tokens:      {total_input:>12,}")
 print(f"  Cache write:       {total_cache_create:>12,}")
 print(f"  Cache read:        {total_cache_read:>12,}")
 print(f"  Output tokens:     {total_output:>12,}")
 total_duration = sum(e.get("duration_seconds", 0) for e in data)
-print(f"  Session time:      {format_duration(total_duration):>12}")
+print(f"  Active time:       {format_duration(total_duration):>12}")
 print(f"  Estimated cost:    ${total_cost:>11.2f}")
 
 if total_output > 0:

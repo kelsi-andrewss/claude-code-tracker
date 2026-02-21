@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Windows detection — native Windows shells (Git Bash, MSYS, Cygwin) won't work correctly
+if [[ "$OSTYPE" == msys* || "$OSTYPE" == cygwin* || -n "${WINDIR:-}" ]]; then
+  echo "Error: claude-code-tracker requires a Unix shell (macOS, Linux, or WSL)." >&2
+  echo "On Windows, install WSL and run this from a WSL terminal:" >&2
+  echo "  https://learn.microsoft.com/windows/wsl/install" >&2
+  exit 1
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="$HOME/.claude/tracking"
 SETTINGS="$HOME/.claude/settings.json"
@@ -47,14 +55,31 @@ hook_entry = {"type": "command", "command": hook_cmd, "timeout": 30, "async": Tr
 hooks = data.setdefault("hooks", {})
 stop_hooks = hooks.setdefault("Stop", [])
 
-# Check if already registered
-for group in stop_hooks:
-    for h in group.get("hooks", []):
-        if h.get("command") == hook_cmd:
-            print("Hook already registered.")
-            sys.exit(0)
+already_stop = any(
+    h.get("command") == hook_cmd
+    for group in stop_hooks for h in group.get("hooks", [])
+)
+if already_stop:
+    print("Hook already registered.")
+else:
+    stop_hooks.append({"hooks": [hook_entry]})
 
-stop_hooks.append({"hooks": [hook_entry]})
+# SessionStart hook
+backfill_cmd = hook_cmd + " --backfill-only"
+session_hooks = hooks.setdefault("SessionStart", [])
+already_session = any(
+    h.get("command") == backfill_cmd
+    for group in session_hooks for h in group.get("hooks", [])
+)
+if not already_session:
+    session_hooks.append({"hooks": [{"type": "command", "command": backfill_cmd, "timeout": 60, "async": True}]})
+
+# permissions.allow
+allow_entry = f"Bash({hook_cmd}*)"
+perms = data.setdefault("permissions", {})
+allow_list = perms.setdefault("allow", [])
+if allow_entry not in allow_list:
+    allow_list.append(allow_entry)
 
 os.makedirs(os.path.dirname(os.path.abspath(settings_file)), exist_ok=True)
 with open(settings_file, 'w') as f:

@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.2.0] - 2026-02-21
+
+### Changed
+- **Per-turn token tracking** — `tokens.json` now stores one entry per prompt turn (with `turn_index` and `turn_timestamp`) instead of one entry per session. Scatter plots, duration histograms, and time-vs-cost charts now have meaningful per-prompt granularity.
+- **Duration histogram buckets** — rebucketed from session-length ranges (0-2m, 2-5m, ...) to per-turn ranges (<5s, 5-15s, 15-30s, 30s-2m, 2m+).
+- **Dashboard labels** — "Sessions per day" is now "Prompts per day", "Session time" is now "Active time", and summary stats show both session and prompt counts.
+- **Cost summary** — `cost-summary.py` reports prompts and sessions separately; "Session time" renamed to "Active time".
+
+### Added
+- **Windows OS guard** — `install.sh` detects native Windows shells (Git Bash, MSYS, Cygwin) and exits with a WSL install link instead of failing silently on Unix path assumptions.
+- **SessionStart hook** — `install.sh` registers a `SessionStart` hook that runs `backfill.py --backfill-only` to catch any missed sessions on startup.
+- **Permissions allow entry** — `install.sh` adds a `Bash()` allow pattern to `settings.json` so the stop-hook runs without prompting.
+- **Old-format migration** — `backfill.py` and `patch-durations.py` detect old single-entry-per-session records (no `turn_index`) and re-process them into per-turn entries.
+
 ## [1.1.7] - 2026-02-19
 
 ### Fixed

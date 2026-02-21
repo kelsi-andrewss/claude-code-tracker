@@ -28,22 +28,24 @@ if not data:
     sys.exit(0)
 
 # --- Aggregate by date ---
-by_date = defaultdict(lambda: {"cost": 0, "sessions": 0, "output": 0,
+# Each entry is a turn; group by date for bar charts, session_id for unique session count
+by_date = defaultdict(lambda: {"cost": 0, "turns": 0, "output": 0,
                                 "cache_read": 0, "cache_create": 0, "input": 0,
                                 "opus_cost": 0, "sonnet_cost": 0, "duration": 0})
-by_model = defaultdict(lambda: {"cost": 0, "sessions": 0})
+by_model = defaultdict(lambda: {"cost": 0, "turns": 0})
 cumulative = []
 
 running_cost = 0
 running_duration = 0
-for e in sorted(data, key=lambda x: (x.get("date", ""), x.get("session_id", ""))):
+sort_key = lambda x: (x.get("date", ""), x.get("session_id", ""), x.get("turn_index", 0))
+for e in sorted(data, key=sort_key):
     d = e.get("date", "unknown")
     cost = e.get("estimated_cost_usd", 0)
     model = e.get("model", "unknown")
     short = model.split("-20")[0] if "-20" in model else model
 
     by_date[d]["cost"] += cost
-    by_date[d]["sessions"] += 1
+    by_date[d]["turns"] += 1
     by_date[d]["output"] += e.get("output_tokens", 0)
     by_date[d]["cache_read"] += e.get("cache_read_tokens", 0)
     by_date[d]["cache_create"] += e.get("cache_creation_tokens", 0)
@@ -55,24 +57,26 @@ for e in sorted(data, key=lambda x: (x.get("date", ""), x.get("session_id", ""))
     by_date[d]["duration"] += e.get("duration_seconds", 0)
 
     by_model[short]["cost"] += cost
-    by_model[short]["sessions"] += 1
+    by_model[short]["turns"] += 1
 
     running_cost += cost
     running_duration += e.get("duration_seconds", 0)
     cumulative.append({"date": d, "cumulative_cost": round(running_cost, 4),
                         "cumulative_duration": round(running_duration),
-                        "session_id": e.get("session_id", "")[:8]})
+                        "session_id": e.get("session_id", "")[:8],
+                        "turn_index": e.get("turn_index", 0)})
 
 dates = sorted(by_date.keys())
 total_cost = sum(e.get("estimated_cost_usd", 0) for e in data)
-total_sessions = len(data)
-sessions_with_data = sum(1 for e in data if e.get("total_tokens", 0) > 0)
+total_turns = len(data)
+total_sessions = len({e.get("session_id") for e in data})
+sessions_with_data = len({e.get("session_id") for e in data if e.get("total_tokens", 0) > 0})
 total_output = sum(e.get("output_tokens", 0) for e in data)
 total_cache_read = sum(e.get("cache_read_tokens", 0) for e in data)
 total_all_tokens = sum(e.get("total_tokens", 0) for e in data)
 cache_pct = round(total_cache_read / total_all_tokens * 100, 1) if total_all_tokens > 0 else 0
 total_duration = sum(e.get("duration_seconds", 0) for e in data)
-avg_duration = total_duration // total_sessions if total_sessions > 0 else 0
+avg_duration = total_duration // total_turns if total_turns > 0 else 0
 
 project_name = data[0].get("project", "Project") if data else "Project"
 
@@ -166,43 +170,43 @@ total_prompts = sum(v["total"] for v in prompt_by_date.values())
 # Build JS data structures
 dates_js = json.dumps(dates)
 cost_by_date_js = json.dumps([round(by_date[d]["cost"], 4) for d in dates])
-sessions_by_date_js = json.dumps([by_date[d]["sessions"] for d in dates])
+sessions_by_date_js = json.dumps([by_date[d]["turns"] for d in dates])
 output_by_date_js = json.dumps([by_date[d]["output"] for d in dates])
 cache_read_by_date_js = json.dumps([by_date[d]["cache_read"] for d in dates])
 opus_by_date_js = json.dumps([round(by_date[d]["opus_cost"], 4) for d in dates])
 sonnet_by_date_js = json.dumps([round(by_date[d]["sonnet_cost"], 4) for d in dates])
 duration_by_date_js = json.dumps([by_date[d]["duration"] for d in dates])
 
-cumul_labels_js = json.dumps([f"{c['date']} #{i+1}" for i, c in enumerate(cumulative)])
+cumul_labels_js = json.dumps([f"{c['date']} {c['session_id']}#{c['turn_index']}" for c in cumulative])
 cumul_values_js = json.dumps([c["cumulative_cost"] for c in cumulative])
 cumul_duration_js = json.dumps([c["cumulative_duration"] for c in cumulative])
 
 avg_duration_by_date_js = json.dumps([
-    round(by_date[d]["duration"] / by_date[d]["sessions"])
-    if by_date[d]["sessions"] > 0 else 0
+    round(by_date[d]["duration"] / by_date[d]["turns"])
+    if by_date[d]["turns"] > 0 else 0
     for d in dates
 ])
 
 scatter_data_js = json.dumps([
     {"x": e.get("duration_seconds", 0),
      "y": round(e.get("estimated_cost_usd", 0), 4),
-     "label": f"{e.get('date', '')} {e.get('session_id', '')[:6]}"}
-    for e in sorted(data, key=lambda x: x.get("date", ""))
+     "label": f"{e.get('date', '')} {e.get('session_id', '')[:6]}#{e.get('turn_index', 0)}"}
+    for e in sorted(data, key=sort_key)
     if e.get("duration_seconds", 0) > 0
 ])
 
-# Tokens per minute per session (output tokens / duration in minutes)
+# Tokens per minute per turn (output tokens / duration in minutes)
 tpm_data_js = json.dumps([
     {"x": e.get("duration_seconds", 0),
      "y": round(e.get("output_tokens", 0) / (e["duration_seconds"] / 60), 1),
-     "label": f"{e.get('date', '')} {e.get('session_id', '')[:6]}"}
-    for e in sorted(data, key=lambda x: x.get("date", ""))
+     "label": f"{e.get('date', '')} {e.get('session_id', '')[:6]}#{e.get('turn_index', 0)}"}
+    for e in sorted(data, key=sort_key)
     if e.get("duration_seconds", 0) > 0 and e.get("output_tokens", 0) > 0
 ])
 
-# Duration histogram: bucket sessions into ranges
-_dur_buckets = [("0–2m", 0, 120), ("2–5m", 120, 300), ("5–15m", 300, 900),
-                ("15–30m", 900, 1800), ("30m+", 1800, None)]
+# Duration histogram: bucket turns into ranges
+_dur_buckets = [("<5s", 0, 5), ("5–15s", 5, 15), ("15–30s", 15, 30),
+                ("30s–2m", 30, 120), ("2m+", 120, None)]
 _dur_counts = {label: 0 for label, _, _ in _dur_buckets}
 for e in data:
     d = e.get("duration_seconds", 0)
@@ -217,7 +221,7 @@ dur_hist_values_js = json.dumps([_dur_counts[b[0]] for b in _dur_buckets])
 
 model_labels_js = json.dumps(list(by_model.keys()))
 model_costs_js = json.dumps([round(by_model[m]["cost"], 4) for m in by_model])
-model_sessions_js = json.dumps([by_model[m]["sessions"] for m in by_model])
+model_sessions_js = json.dumps([by_model[m]["turns"] for m in by_model])
 
 # All dates union for prompts vs total chart
 all_prompt_dates = sorted(set(list(prompt_by_date.keys()) + list(human_by_date.keys())))
@@ -326,7 +330,7 @@ html = f"""<!DOCTYPE html>
   <div class="stat">
     <div class="stat-label">Sessions</div>
     <div class="stat-value">{total_sessions}</div>
-    <div class="stat-sub">{sessions_with_data} with token data</div>
+    <div class="stat-sub">{total_turns} prompts total</div>
   </div>
   <div class="stat">
     <div class="stat-label">Output tokens</div>
@@ -339,9 +343,9 @@ html = f"""<!DOCTYPE html>
     <div class="stat-sub">of all tokens</div>
   </div>
   <div class="stat">
-    <div class="stat-label">Session time</div>
+    <div class="stat-label">Active time</div>
     <div class="stat-value">{format_duration(total_duration)}</div>
-    <div class="stat-sub">avg {format_duration(avg_duration)} / session</div>
+    <div class="stat-sub">avg {format_duration(avg_duration)} / prompt</div>
   </div>
   <div class="stat">
     <div class="stat-label">Key prompts captured</div>
@@ -370,7 +374,7 @@ html = f"""<!DOCTYPE html>
     </div>
 
     <div class="card">
-      <h2>Sessions per day</h2>
+      <h2>Prompts per day</h2>
       <canvas id="sessDay"></canvas>
     </div>
 
@@ -429,7 +433,7 @@ html = f"""<!DOCTYPE html>
     </div>
 
     <div class="card">
-      <h2>Session length distribution</h2>
+      <h2>Prompt length distribution</h2>
       <canvas id="durationDist"></canvas>
     </div>
 
@@ -524,12 +528,12 @@ new Chart(document.getElementById('costDay'), {{
     tooltip: {{ callbacks: {{ label: ctx => ' $' + ctx.parsed.y.toFixed(2) }} }} }} }}
 }});
 
-// Sessions per day
+// Prompts per day
 new Chart(document.getElementById('sessDay'), {{
   type: 'bar',
   data: {{
     labels: DATES,
-    datasets: [{{ label: 'Sessions', data: SESSIONS_BY_DATE,
+    datasets: [{{ label: 'Prompts', data: SESSIONS_BY_DATE,
       backgroundColor: '#22d3ee', borderRadius: 4 }}]
   }},
   options: baseOpts
@@ -605,7 +609,7 @@ new Chart(document.getElementById('cumulTime'), {{
 new Chart(document.getElementById('timeVsCost'), {{
   type: 'scatter',
   data: {{
-    datasets: [{{ label: 'Session', data: SCATTER_DATA,
+    datasets: [{{ label: 'Prompt', data: SCATTER_DATA,
       backgroundColor: '#34d399', pointRadius: 5, pointHoverRadius: 7 }}]
   }},
   options: {{ ...baseOpts,
@@ -629,7 +633,7 @@ new Chart(document.getElementById('timeVsCost'), {{
 new Chart(document.getElementById('tokensPerMin'), {{
   type: 'scatter',
   data: {{
-    datasets: [{{ label: 'Session', data: TPM_DATA,
+    datasets: [{{ label: 'Prompt', data: TPM_DATA,
       backgroundColor: '#818cf8', pointRadius: 5, pointHoverRadius: 7 }}]
   }},
   options: {{ ...baseOpts,
@@ -648,12 +652,12 @@ new Chart(document.getElementById('tokensPerMin'), {{
       }} }} }} }}
 }});
 
-// Session length distribution histogram
+// Prompt length distribution histogram
 new Chart(document.getElementById('durationDist'), {{
   type: 'bar',
   data: {{
     labels: DUR_HIST_LABELS,
-    datasets: [{{ label: 'Sessions', data: DUR_HIST_VALUES,
+    datasets: [{{ label: 'Prompts', data: DUR_HIST_VALUES,
       backgroundColor: '#34d399', borderRadius: 4 }}]
   }},
   options: {{ ...baseOpts,

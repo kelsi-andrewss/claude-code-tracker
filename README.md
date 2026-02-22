@@ -167,6 +167,23 @@ The uninstaller removes the scripts from `~/.claude/tracking/` and removes the S
 
 ---
 
+## Skills
+
+`install.sh` copies bundled Claude Code skills into `~/.claude/skills/` automatically. Skills are slash commands available in any Claude Code session.
+
+### /view-tracking
+
+Opens the tracking dashboard and today's key-prompts file for the current project.
+
+```
+/view-tracking
+```
+
+- **macOS**: opens files with `open`
+- **Linux / WSL**: opens files with `xdg-open` (falls back to printing the path if unavailable)
+
+---
+
 ## Cost note
 
 Figures shown are **API list-price equivalents** — what pay-as-you-go API customers would be charged at current Anthropic pricing. If you are on a Max subscription, these are not amounts billed to you.

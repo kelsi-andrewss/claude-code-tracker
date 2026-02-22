@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.4] - 2026-02-22
+
+### Added
+- **Skills install/uninstall** — `install.sh` now copies bundled skills from `skills/*/SKILL.md` into `~/.claude/skills/` on install. `uninstall.sh` removes them on uninstall. Windows detection (Git Bash, MSYS, Cygwin) added to `uninstall.sh` to match the existing guard in `install.sh`.
+- **`/view-tracking` skill** — Claude Code skill that opens `charts.html` and today's key-prompts file for the current project. Installed automatically to `~/.claude/skills/view-tracking/`. Cross-platform: uses `open` on macOS, `xdg-open` on Linux/WSL with a fallback message if the command is unavailable.
+
 ## [1.2.3] - 2026-02-21
 
 ### Fixed

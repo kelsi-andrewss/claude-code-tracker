@@ -15,7 +15,7 @@ from datetime import date
 def find_git_root():
     root = os.getcwd()
     while root != "/":
-        if os.path.isdir(os.path.join(root, ".git")):
+        if os.path.exists(os.path.join(root, ".git")):
             return root
         root = os.path.dirname(root)
     return root

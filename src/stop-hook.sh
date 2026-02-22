@@ -10,7 +10,7 @@ if [[ "${1:-}" == "--backfill-only" ]]; then
   if [[ -z "$CWD" ]]; then exit 0; fi
   PROJECT_ROOT="$CWD"
   while [[ "$PROJECT_ROOT" != "/" ]]; do
-    [[ -d "$PROJECT_ROOT/.git" ]] && break
+    [[ -e "$PROJECT_ROOT/.git" ]] && break
     PROJECT_ROOT="$(dirname "$PROJECT_ROOT")"
   done
   if [[ "$PROJECT_ROOT" == "/" ]]; then exit 0; fi
@@ -37,7 +37,7 @@ if [[ -z "$CWD" || -z "$TRANSCRIPT" || ! -f "$TRANSCRIPT" ]]; then exit 0; fi
 # Find project root (walk up to .git)
 PROJECT_ROOT="$CWD"
 while [[ "$PROJECT_ROOT" != "/" ]]; do
-  [[ -d "$PROJECT_ROOT/.git" ]] && break
+  [[ -e "$PROJECT_ROOT/.git" ]] && break
   PROJECT_ROOT="$(dirname "$PROJECT_ROOT")"
 done
 if [[ "$PROJECT_ROOT" == "/" ]]; then exit 0; fi

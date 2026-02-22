@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.2.3] - 2026-02-21
+
+### Fixed
+- **Git worktree support** — `.git` detection in `stop-hook.sh` and `cost-summary.py` now uses existence checks (`-e` / `os.path.exists`) instead of directory checks (`-d` / `os.path.isdir`). Worktrees outside the repo tree no longer silently discard sessions.
+
+### Changed
+- **Prompt length distribution** — chart now has a dropdown to switch between four time ranges (0–30s, 0–60s, 0–30m, 0–60m) with finer-grained buckets and an overflow bar for each range.
+
+## [1.2.2] - 2026-02-21
+
+### Fixed
+- **Stale hook path on upgrade** — `install.sh` now replaces any existing `stop-hook.sh` hook entry instead of skipping if an entry from a different install method (npm vs brew) is already present. Prevents the old path from running stale code after switching install methods.
+
+## [1.2.1] - 2026-02-21
+
+### Fixed
+- **`package-lock.json` excluded** — added to `.gitignore` to prevent it from blocking the deploy script's clean-tree check.
+
 ## [1.2.0] - 2026-02-21
 
 ### Changed

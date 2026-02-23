@@ -15,14 +15,17 @@ Old-format entries (no turn_index field) are replaced with per-turn entries.
 import sys, json, os, glob
 from datetime import datetime
 
+# Cross-platform utilities
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from platform_utils import slugify_path, get_transcripts_dir, run_python_script
+
 project_root = os.path.abspath(sys.argv[1])
 project_name = os.path.basename(project_root)
 tracking_dir = os.path.join(project_root, ".claude", "tracking")
 tokens_file = os.path.join(tracking_dir, "tokens.json")
 
-# Claude Code slugifies project paths: replace "/" with "-"
-slug = project_root.replace("/", "-")
-transcripts_dir = os.path.expanduser("~/.claude/projects/" + slug)
+# Claude Code slugifies project paths: replace path separators with "-"
+transcripts_dir = get_transcripts_dir(project_root)
 
 if not os.path.isdir(transcripts_dir):
     print("No transcript directory found, nothing to backfill.")
@@ -229,4 +232,8 @@ print(f"{sessions_processed} session{'s' if sessions_processed != 1 else ''} pro
 if new_entries:
     script_dir = os.path.dirname(os.path.abspath(__file__))
     charts_html = os.path.join(tracking_dir, "charts.html")
-    os.system(f'python3 "{script_dir}/generate-charts.py" "{tokens_file}" "{charts_html}" 2>/dev/null')
+    run_python_script(
+        os.path.join(script_dir, "generate-charts.py"),
+        [tokens_file, charts_html],
+        suppress_errors=True,
+    )

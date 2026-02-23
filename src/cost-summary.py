@@ -12,12 +12,14 @@ import webbrowser
 from collections import defaultdict
 from datetime import date
 
+# Cross-platform utilities
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from platform_utils import find_git_root as _platform_find_git_root, open_file_in_browser
+
 def find_git_root():
-    root = os.getcwd()
-    while root != "/":
-        if os.path.exists(os.path.join(root, ".git")):
-            return root
-        root = os.path.dirname(root)
+    root = _platform_find_git_root()
+    if root is None:
+        return os.getcwd()  # Fallback to cwd like the original
     return root
 
 def find_tokens_file():
@@ -41,7 +43,7 @@ if "--chart" in sys.argv:
     chart = os.path.join(find_git_root(), ".claude", "tracking", "charts.html")
     if not os.path.exists(chart):
         sys.exit(f"No charts.html found at {chart} — run generate-charts.py first")
-    webbrowser.open(f"file://{chart}")
+    open_file_in_browser(chart)
     sys.exit(0)
 
 tokens_file = sys.argv[1] if len(sys.argv) > 1 else find_tokens_file()

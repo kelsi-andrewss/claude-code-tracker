@@ -13,6 +13,8 @@ Steps:
    ```bash
    if [[ "$OSTYPE" == darwin* ]]; then
      open "$CLAUDE_PROJECT_DIR/.claude/tracking/charts.html"
+   elif [[ "$OSTYPE" == msys* || "$OSTYPE" == cygwin* || -n "${WINDIR:-}" ]]; then
+     start "" "$CLAUDE_PROJECT_DIR/.claude/tracking/charts.html"
    else
      xdg-open "$CLAUDE_PROJECT_DIR/.claude/tracking/charts.html" 2>/dev/null || echo "Could not open charts.html automatically. Path: $CLAUDE_PROJECT_DIR/.claude/tracking/charts.html"
    fi
@@ -26,6 +28,8 @@ Steps:
      ```bash
      if [[ "$OSTYPE" == darwin* ]]; then
        open "$CLAUDE_PROJECT_DIR/.claude/tracking/key-prompts/YYYY-MM-DD.md"
+     elif [[ "$OSTYPE" == msys* || "$OSTYPE" == cygwin* || -n "${WINDIR:-}" ]]; then
+       start "" "$CLAUDE_PROJECT_DIR/.claude/tracking/key-prompts/YYYY-MM-DD.md"
      else
        xdg-open "$CLAUDE_PROJECT_DIR/.claude/tracking/key-prompts/YYYY-MM-DD.md" 2>/dev/null || echo "Could not open key-prompts file automatically. Path: $CLAUDE_PROJECT_DIR/.claude/tracking/key-prompts/YYYY-MM-DD.md"
      fi
@@ -38,6 +42,8 @@ Steps:
      ```bash
      if [[ "$OSTYPE" == darwin* ]]; then
        open "$CLAUDE_PROJECT_DIR/.claude/tracking/key-prompts/YYYY-MM-DD.md"
+     elif [[ "$OSTYPE" == msys* || "$OSTYPE" == cygwin* || -n "${WINDIR:-}" ]]; then
+       start "" "$CLAUDE_PROJECT_DIR/.claude/tracking/key-prompts/YYYY-MM-DD.md"
      else
        xdg-open "$CLAUDE_PROJECT_DIR/.claude/tracking/key-prompts/YYYY-MM-DD.md" 2>/dev/null || echo "Could not open key-prompts file automatically. Path: $CLAUDE_PROJECT_DIR/.claude/tracking/key-prompts/YYYY-MM-DD.md"
      fi

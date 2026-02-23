@@ -8,6 +8,10 @@ Usage: python3 generate-charts.py <tokens.json> <output.html>
 import sys, json, os, re, glob
 from collections import defaultdict
 
+# Cross-platform utilities
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from platform_utils import slugify_path
+
 tokens_file = sys.argv[1]
 output_file = sys.argv[2]
 
@@ -82,10 +86,9 @@ project_name = data[0].get("project", "Project") if data else "Project"
 
 # --- Count total human messages per date from JSONL transcripts ---
 project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(tokens_file))))  # project root
-# Claude Code slugifies paths as: replace every "/" with "-" (keeping leading slash → leading dash)
-transcripts_dir = os.path.expanduser(
-    "~/.claude/projects/" + project_dir.replace("/", "-")
-)
+# Claude Code slugifies paths: replace path separators with "-" (cross-platform)
+slug = slugify_path(project_dir)
+transcripts_dir = os.path.join(os.path.expanduser("~"), ".claude", "projects", slug)
 human_by_date = defaultdict(int)
 trivial_by_date = defaultdict(int)
 

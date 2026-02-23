@@ -64,7 +64,7 @@ msgs = []       # (role, timestamp)
 usages = []     # usage dicts from assistant messages, in order
 model = "unknown"
 
-with open(transcript_path) as f:
+with open(transcript_path, encoding='utf-8') as f:
     for line in f:
         try:
             obj = json.loads(line)
@@ -159,7 +159,7 @@ if not turn_entries:
 data = []
 if os.path.exists(tokens_file):
     try:
-        with open(tokens_file) as f:
+        with open(tokens_file, encoding='utf-8') as f:
             data = json.load(f)
     except:
         data = []
@@ -198,10 +198,19 @@ for entry in turn_entries:
 # Sort by (date, session_id, turn_index)
 data.sort(key=lambda x: (x.get('date', ''), x.get('session_id', ''), x.get('turn_index', 0)))
 
-with open(tokens_file, 'w') as f:
+with open(tokens_file, 'w', encoding='utf-8') as f:
     json.dump(data, f, indent=2)
     f.write('\n')
 PYEOF
+
+# Extract key prompts from this session
+python3 -c "
+import sys; sys.path.insert(0, '$SCRIPT_DIR')
+from extract_key_prompts import extract_prompts_from_jsonl, write_key_prompts
+prompts = extract_prompts_from_jsonl('$TRANSCRIPT', '$SESSION_ID')
+if prompts:
+    write_key_prompts('$TRACKING_DIR', prompts)
+" 2>/dev/null || true
 
 # Regenerate charts
 python3 "$SCRIPT_DIR/generate-charts.py" "$TRACKING_DIR/tokens.json" "$TRACKING_DIR/charts.html" 2>/dev/null || true

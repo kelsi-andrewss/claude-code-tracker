@@ -14,6 +14,9 @@ import json
 import os
 from datetime import datetime, date
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from extract_key_prompts import extract_prompts_from_jsonl, write_key_prompts
+
 
 def main():
     transcript_path = sys.argv[1]
@@ -184,6 +187,12 @@ def main():
     with open(tokens_file, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
         f.write("\n")
+
+    # --- Extract key prompts from this session ---
+    tracking_dir = os.path.dirname(tokens_file)
+    prompts = extract_prompts_from_jsonl(transcript_path, session_id)
+    if prompts:
+        write_key_prompts(tracking_dir, prompts)
 
 
 if __name__ == "__main__":

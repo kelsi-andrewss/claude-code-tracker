@@ -20,7 +20,7 @@ tokens_file = os.path.join(tracking_dir, "tokens.json")
 transcripts_dir = get_transcripts_dir(project_root)
 project_name = os.path.basename(project_root)
 
-with open(tokens_file) as f:
+with open(tokens_file, encoding="utf-8") as f:
     data = json.load(f)
 
 def parse_transcript(jf):
@@ -29,7 +29,7 @@ def parse_transcript(jf):
     model = "unknown"
     first_ts = None
     try:
-        with open(jf) as f:
+        with open(jf, encoding="utf-8") as f:
             for line in f:
                 try:
                     obj = json.loads(line)
@@ -194,7 +194,7 @@ new_entries.extend(new_turn_entries)
 new_entries.sort(key=lambda x: (x.get("date", ""), x.get("session_id", ""), x.get("turn_index", 0)))
 
 if patched > 0 or migrated_sessions > 0:
-    with open(tokens_file, "w") as f:
+    with open(tokens_file, "w", encoding="utf-8") as f:
         json.dump(new_entries, f, indent=2)
         f.write("\n")
     script_dir = os.path.dirname(os.path.abspath(__file__))

@@ -35,7 +35,7 @@ if not os.path.isdir(transcripts_dir):
 data = []
 if os.path.exists(tokens_file):
     try:
-        with open(tokens_file) as f:
+        with open(tokens_file, encoding="utf-8") as f:
             data = json.load(f)
     except Exception:
         data = []
@@ -61,7 +61,7 @@ def parse_turns(jf):
     first_ts = None
 
     try:
-        with open(jf) as f:
+        with open(jf, encoding="utf-8") as f:
             for line in f:
                 try:
                     obj = json.loads(line)
@@ -221,7 +221,7 @@ data.sort(key=lambda x: (x.get("date", ""), x.get("session_id", ""), x.get("turn
 # Write updated tokens.json
 if new_entries:
     os.makedirs(os.path.dirname(tokens_file), exist_ok=True)
-    with open(tokens_file, "w") as f:
+    with open(tokens_file, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
         f.write("\n")
 

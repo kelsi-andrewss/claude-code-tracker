@@ -18,6 +18,7 @@ from datetime import datetime
 # Cross-platform utilities
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from platform_utils import slugify_path, get_transcripts_dir, run_python_script
+from extract_key_prompts import extract_prompts_from_jsonl, write_key_prompts
 
 project_root = os.path.abspath(sys.argv[1])
 project_name = os.path.basename(project_root)
@@ -228,8 +229,27 @@ if new_entries:
 total_turns = len(new_entries)
 print(f"{sessions_processed} session{'s' if sessions_processed != 1 else ''} processed, {total_turns} turn{'s' if total_turns != 1 else ''} written.")
 
+# --- Extract key prompts from ALL transcripts ---
+all_prompts = []
+for jf in jsonl_files:
+    session_id = os.path.splitext(os.path.basename(jf))[0]
+    prompts = extract_prompts_from_jsonl(jf, session_id)
+    all_prompts.extend(prompts)
+
+if all_prompts:
+    written = write_key_prompts(tracking_dir, all_prompts)
+    if written:
+        print(f"{written} key prompt{'s' if written != 1 else ''} extracted.")
+        # Regenerate key-prompts index
+        script_dir_kp = os.path.dirname(os.path.abspath(__file__))
+        run_python_script(
+            os.path.join(script_dir_kp, "update-prompts-index.py"),
+            [tracking_dir],
+            suppress_errors=True,
+        )
+
 # Regenerate charts if we added anything
-if new_entries:
+if new_entries or all_prompts:
     script_dir = os.path.dirname(os.path.abspath(__file__))
     charts_html = os.path.join(tracking_dir, "charts.html")
     run_python_script(

@@ -120,4 +120,32 @@ if [[ "$SCRIPT_DIR" != */Cellar/* ]]; then
   fi
 fi
 
+# Check project .gitignore — warn if .claude/ is not covered
+GITIGNORE_PATH="$PWD/.gitignore"
+if [[ -f "$GITIGNORE_PATH" ]]; then
+  if grep -qE '^\.claude/?$|^\*\*\/\.claude/?$' "$GITIGNORE_PATH"; then
+    GITIGNORE_OK=true
+  else
+    GITIGNORE_OK=false
+  fi
+else
+  GITIGNORE_OK=false
+fi
+
+if [[ "$GITIGNORE_OK" == false ]]; then
+  echo ""
+  echo "╔══════════════════════════════════════════════════════════════╗"
+  echo "║  ⚠  WARNING: .claude/ is NOT in your .gitignore             ║"
+  echo "║                                                              ║"
+  echo "║  Your tracking data (costs, tokens, key prompts) will be    ║"
+  echo "║  committed to git and pushed to GitHub.                     ║"
+  echo "║                                                              ║"
+  echo "║  Add this line to your project's .gitignore:               ║"
+  echo "║                                                              ║"
+  echo "║      .claude/                                               ║"
+  echo "║                                                              ║"
+  echo "╚══════════════════════════════════════════════════════════════╝"
+  echo ""
+fi
+
 echo "claude-code-tracker installed. Restart Claude Code to activate."

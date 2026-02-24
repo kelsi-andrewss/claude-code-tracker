@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.2.5] - 2026-02-23
+
+### Added
+- **Auto key-prompts extraction** — new `extract_key_prompts.py` module automatically extracts non-trivial human messages from JSONL transcripts and writes them to `key-prompts/YYYY-MM-DD.md` with `**Category**:` tags. Replaces the manual-only workflow — prompts are now captured during both live sessions and backfill.
+- **Auto-categorization** — prompts are classified into the 4 original categories (`bug-resolution`, `architecture`, `feature`, `breakthrough`) using content heuristics. Long prompts (500+ chars) are tagged as breakthroughs.
+- **Duplicate detection** — re-running backfill won't re-add prompts that already exist in a key-prompts file (matched by first 80 chars).
+- **Cross-platform Windows support** — full Windows compatibility added across the entire codebase:
+  - `install.js` / `uninstall.js` — Node.js entry points replacing `bash ./install.sh` as npm postinstall hook
+  - `stop-hook.js` — Node.js stop hook for Windows (macOS/Linux continue using `stop-hook.sh`)
+  - `parse-session.py` — extracted from `stop-hook.sh` inline heredoc for cross-platform use
+  - `init-templates.py` — Python replacement for `init-templates.sh`
+  - `platform_utils.py` — shared module for OS detection, path slugification, Python command resolution, and file opening
+  - `bin/claude-tracker-cost.js` — npm bin wrapper (Windows can't execute `.py` shebangs)
+- **`/view-tracking` skill** — added Windows `start` command branch alongside existing `open` (macOS) and `xdg-open` (Linux)
+- **`.gitignore` warning on install** — both `install.js` and `install.sh` now check whether `.claude/` is covered by the project's `.gitignore` at install time. If not, a prominent box warning is printed reminding the user to add `.claude/` to prevent tracking data (costs, tokens, key prompts) from being committed to git. Warning only — the `.gitignore` is never modified automatically.
+
+### Fixed
+- **Path slugification on Windows** — `C:\Users\...` now correctly produces `C--Users-...` slug (colon replaced with dash) matching Claude Code's on-disk format
+- **UTF-8 encoding** — all `open()` calls across 6 Python scripts (13+ call sites) now specify `encoding="utf-8"`, fixing `UnicodeDecodeError` on Windows where the default encoding is cp1252
+- **`find_git_root()` infinite loop on Windows** — replaced `while root != "/"` with `while parent != root` which works on all OSes
+- **`stop-hook.sh` heredoc encoding** — added `encoding='utf-8'` to 3 `open()` calls in the inline Python that were missing it
+
+### Changed
+- **Key-prompts pipeline** — `backfill.py`, `parse-session.py`, and `stop-hook.sh` all now extract key prompts as part of their normal processing flow
+- **`package.json`** — postinstall uses `node install.js`, added `bin` entry, updated `files` list and repository URL
+
 ## [1.2.4] - 2026-02-22
 
 ### Added

@@ -13,20 +13,24 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kelsi-andrewss/claude-code-tracker.git"
+    "url": "git+https://github.com/FpSilSha/claude-code-tracker.git"
   },
   "scripts": {
-    "postinstall": "bash ./install.sh"
+    "postinstall": "node install.js"
   },
   "bin": {
-    "claude-tracker-cost": "src/cost-summary.py"
+    "claude-tracker-cost": "bin/claude-tracker-cost.js"
   },
   "engines": {
     "node": ">=14"
   },
   "files": [
     "src/",
+    "bin/",
+    "skills/",
+    "install.js",
     "install.sh",
+    "uninstall.js",
     "uninstall.sh",
     "README.md"
   ]

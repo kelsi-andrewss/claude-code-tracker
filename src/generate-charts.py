@@ -8,6 +8,10 @@ Usage: python3 generate-charts.py <tokens.json> <output.html>
 import sys, json, os, re, glob
 from collections import defaultdict
 
+# Cross-platform utilities
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from platform_utils import slugify_path
+
 tokens_file = sys.argv[1]
 output_file = sys.argv[2]
 
@@ -21,7 +25,7 @@ def format_duration(seconds):
         return f"{h}h {m}m"
     return f"{m}m {s}s"
 
-with open(tokens_file) as f:
+with open(tokens_file, encoding="utf-8") as f:
     data = json.load(f)
 
 if not data:
@@ -82,10 +86,9 @@ project_name = data[0].get("project", "Project") if data else "Project"
 
 # --- Count total human messages per date from JSONL transcripts ---
 project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(tokens_file))))  # project root
-# Claude Code slugifies paths as: replace every "/" with "-" (keeping leading slash → leading dash)
-transcripts_dir = os.path.expanduser(
-    "~/.claude/projects/" + project_dir.replace("/", "-")
-)
+# Claude Code slugifies paths: replace path separators with "-" (cross-platform)
+slug = slugify_path(project_dir)
+transcripts_dir = os.path.join(os.path.expanduser("~"), ".claude", "projects", slug)
 human_by_date = defaultdict(int)
 trivial_by_date = defaultdict(int)
 
@@ -107,7 +110,7 @@ if os.path.isdir(transcripts_dir):
                 os.path.getmtime(jf)).strftime("%Y-%m-%d")
 
         try:
-            with open(jf) as f:
+            with open(jf, encoding="utf-8") as f:
                 for line in f:
                     try:
                         obj = json.loads(line)
@@ -155,7 +158,7 @@ all_categories = set()
 
 for f in prompt_files:
     date = os.path.splitext(os.path.basename(f))[0]
-    content = open(f).read()
+    content = open(f, encoding="utf-8").read()
     cats = re.findall(r'^\*\*Category\*\*: (\S+)', content, re.MULTILINE)
     by_cat = defaultdict(int)
     for c in cats:
@@ -762,5 +765,5 @@ new Chart(document.getElementById('promptStack'), {{
 </html>
 """
 
-with open(output_file, "w") as f:
+with open(output_file, "w", encoding="utf-8") as f:
     f.write(html)

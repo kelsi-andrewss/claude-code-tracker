@@ -26,7 +26,7 @@ total_entries = 0
 
 for f in files:
     date = os.path.splitext(os.path.basename(f))[0]
-    with open(f) as fh:
+    with open(f, encoding="utf-8") as fh:
         content = fh.read()
 
     # Count entries (## headings that are not the title line)
@@ -56,5 +56,5 @@ lines.append("\n---\n")
 lines.append("\nNew entries go in `key-prompts/YYYY-MM-DD.md` for today's date. "
              "Create the file if it doesn't exist — use the same header format as existing files.\n")
 
-with open(index_file, "w") as f:
+with open(index_file, "w", encoding="utf-8") as f:
     f.writelines(lines)

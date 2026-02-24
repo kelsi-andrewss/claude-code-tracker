@@ -16,7 +16,7 @@ agents_file = os.path.join(os.path.dirname(os.path.abspath(tokens_file)), 'agent
 agent_data = []
 if os.path.exists(agents_file):
     try:
-        with open(agents_file) as f:
+        with open(agents_file, encoding='utf-8') as f:
             agent_data = json.load(f)
     except:
         pass
@@ -31,7 +31,7 @@ def format_duration(seconds):
         return f"{h}h {m}m"
     return f"{m}m {s}s"
 
-with open(tokens_file) as f:
+with open(tokens_file, encoding='utf-8') as f:
     data = json.load(f)
 
 if not data:
@@ -117,7 +117,7 @@ if os.path.isdir(transcripts_dir):
                 os.path.getmtime(jf)).strftime("%Y-%m-%d")
 
         try:
-            with open(jf) as f:
+            with open(jf, encoding='utf-8') as f:
                 for line in f:
                     try:
                         obj = json.loads(line)
@@ -165,7 +165,7 @@ all_categories = set()
 
 for f in prompt_files:
     date = os.path.splitext(os.path.basename(f))[0]
-    content = open(f).read()
+    content = open(f, encoding='utf-8').read()
     cats = re.findall(r'^\*\*Category\*\*: (\S+)', content, re.MULTILINE)
     by_cat = defaultdict(int)
     for c in cats:
@@ -839,5 +839,5 @@ new Chart(document.getElementById('promptStack'), {{
 </html>
 """
 
-with open(output_file, "w") as f:
+with open(output_file, "w", encoding='utf-8') as f:
     f.write(html)

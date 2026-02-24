@@ -46,7 +46,7 @@ if "--chart" in sys.argv:
 
 tokens_file = sys.argv[1] if len(sys.argv) > 1 else find_tokens_file()
 
-with open(tokens_file) as f:
+with open(tokens_file, encoding='utf-8') as f:
     data = json.load(f)
 
 if not data:

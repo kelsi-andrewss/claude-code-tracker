@@ -42,7 +42,7 @@ model = "unknown"
 turns = 0
 first_ts = None
 
-with open(transcript_path) as f:
+with open(transcript_path, encoding='utf-8') as f:
     for line in f:
         try:
             obj = json.loads(line)
@@ -98,13 +98,13 @@ entry = {
 data = []
 if os.path.exists(agents_file):
     try:
-        with open(agents_file) as f:
+        with open(agents_file, encoding='utf-8') as f:
             data = json.load(f)
     except:
         data = []
 
 data.append(entry)
-with open(agents_file, 'w') as f:
+with open(agents_file, 'w', encoding='utf-8') as f:
     json.dump(data, f, indent=2)
     f.write('\n')
 PYEOF

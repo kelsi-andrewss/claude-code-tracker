@@ -64,7 +64,7 @@ msgs = []       # (role, timestamp)
 usages = []     # usage dicts from assistant messages, in order
 model = "unknown"
 
-with open(transcript_path) as f:
+with open(transcript_path, encoding='utf-8') as f:
     for line in f:
         try:
             obj = json.loads(line)
@@ -159,7 +159,7 @@ if not turn_entries:
 data = []
 if os.path.exists(tokens_file):
     try:
-        with open(tokens_file) as f:
+        with open(tokens_file, encoding='utf-8') as f:
             data = json.load(f)
     except:
         data = []
@@ -198,7 +198,7 @@ for entry in turn_entries:
 # Sort by (date, session_id, turn_index)
 data.sort(key=lambda x: (x.get('date', ''), x.get('session_id', ''), x.get('turn_index', 0)))
 
-with open(tokens_file, 'w') as f:
+with open(tokens_file, 'w', encoding='utf-8') as f:
     json.dump(data, f, indent=2)
     f.write('\n')
 PYEOF

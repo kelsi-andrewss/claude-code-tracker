@@ -28,7 +28,7 @@ All data lives in `<project>/.claude/tracking/` alongside your code.
 npm install -g claude-code-tracker
 ```
 
-The `postinstall` script copies the tracking scripts to `~/.claude/tracking/` and registers the Stop hook in `~/.claude/settings.json`.
+The `postinstall` script copies the tracking scripts to `~/.claude/tracking/` and registers the Stop hook in `~/.claude/settings.json`. On Windows, the Node.js wrappers (`install.js`, `stop-hook.js`) delegate to bash automatically via Git Bash or WSL.
 
 ### Option 2 — Homebrew
 

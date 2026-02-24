@@ -135,3 +135,13 @@ if [[ "$SCRIPT_DIR" != */Cellar/* ]]; then
 fi
 
 echo "claude-code-tracker installed. Restart Claude Code to activate."
+
+# Warn if .claude/ is not covered by .gitignore
+if [[ -f ".gitignore" ]]; then
+  if ! grep -q '\.claude/' .gitignore && ! grep -q '^\.claude$' .gitignore; then
+    echo ""
+    echo "WARNING: .claude/ does not appear to be in your .gitignore."
+    echo "Tracking data (tokens, agent costs, session history) will be committed to git."
+    echo "Add '.claude/' or '.claude/tracking/' to .gitignore to prevent this."
+  fi
+fi

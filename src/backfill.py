@@ -14,6 +14,7 @@ Old-format entries (no turn_index field) are replaced with per-turn entries.
 """
 import sys, json, os, glob
 from datetime import datetime
+from platform_utils import get_transcripts_dir, slugify_path
 
 project_root = os.path.abspath(sys.argv[1])
 project_name = os.path.basename(project_root)
@@ -21,8 +22,8 @@ tracking_dir = os.path.join(project_root, ".claude", "tracking")
 tokens_file = os.path.join(tracking_dir, "tokens.json")
 
 # Claude Code slugifies project paths: replace "/" with "-"
-slug = project_root.replace("/", "-")
-transcripts_dir = os.path.expanduser("~/.claude/projects/" + slug)
+slug = slugify_path(project_root)
+transcripts_dir = os.path.join(get_transcripts_dir(), slug)
 
 if not os.path.isdir(transcripts_dir):
     print("No transcript directory found, nothing to backfill.")
@@ -32,7 +33,7 @@ if not os.path.isdir(transcripts_dir):
 data = []
 if os.path.exists(tokens_file):
     try:
-        with open(tokens_file) as f:
+        with open(tokens_file, encoding='utf-8') as f:
             data = json.load(f)
     except Exception:
         data = []
@@ -58,7 +59,7 @@ def parse_turns(jf):
     first_ts = None
 
     try:
-        with open(jf) as f:
+        with open(jf, encoding='utf-8') as f:
             for line in f:
                 try:
                     obj = json.loads(line)
@@ -218,7 +219,7 @@ data.sort(key=lambda x: (x.get("date", ""), x.get("session_id", ""), x.get("turn
 # Write updated tokens.json
 if new_entries:
     os.makedirs(os.path.dirname(tokens_file), exist_ok=True)
-    with open(tokens_file, "w") as f:
+    with open(tokens_file, "w", encoding='utf-8') as f:
         json.dump(data, f, indent=2)
         f.write("\n")
 

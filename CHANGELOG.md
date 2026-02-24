@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.1] - 2026-02-24
+
+### Added
+- **Windows support** — full Windows compatibility via Node.js wrappers (`install.js`, `uninstall.js`, `stop-hook.js`, `bin/claude-tracker-cost.js`) and a new `platform_utils.py` module centralizing OS-specific path handling and file opening.
+- **`src/init-templates.py`** — cross-platform Python replacement for `init-templates.sh`.
+- **`.gitignore` warning** — `install.sh` and `install.js` now warn if `.claude/` is not covered by the project's `.gitignore`, preventing accidental commits of tracking data.
+- **Skills Windows support** — `/view-tracking` skill now uses `start ""` on Windows alongside existing `open`/`xdg-open` paths.
+
+### Fixed
+- **`encoding="utf-8"`** added to all file open calls across `stop-hook.sh`, `subagent-stop-hook.sh`, `backfill.py`, `generate-charts.py`, `cost-summary.py`, `patch-durations.py`, `update-prompts-index.py` — prevents crashes on Windows when transcripts contain non-ASCII characters.
+- **Path slugification** — `backfill.py` now uses `platform_utils.slugify_path()` for cross-platform project path to slug conversion (handles Windows backslashes and drive letter colons).
+
 ## [1.3.0] - 2026-02-23
 
 ### Added

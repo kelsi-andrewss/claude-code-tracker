@@ -11,6 +11,16 @@ from collections import defaultdict
 tokens_file = sys.argv[1]
 output_file = sys.argv[2]
 
+# Load agent data (optional — file may not exist on older installs)
+agents_file = os.path.join(os.path.dirname(os.path.abspath(tokens_file)), 'agents.json')
+agent_data = []
+if os.path.exists(agents_file):
+    try:
+        with open(agents_file) as f:
+            agent_data = json.load(f)
+    except:
+        pass
+
 def format_duration(seconds):
     if seconds <= 0:
         return "0m"
@@ -285,6 +295,69 @@ donut_labels_js = json.dumps(list(cat_totals.keys()))
 donut_values_js = json.dumps(list(cat_totals.values()))
 donut_colors_js = json.dumps([CAT_COLORS.get(c, DEFAULT_COLOR) for c in cat_totals])
 
+# --- Agent data aggregation ---
+by_agent_type = defaultdict(lambda: {"cost": 0, "count": 0})
+for a in agent_data:
+    t = a.get('agent_type', 'unknown')
+    by_agent_type[t]["cost"]  += a.get('estimated_cost_usd', 0)
+    by_agent_type[t]["count"] += 1
+
+agent_types_sorted = sorted(by_agent_type.keys(), key=lambda t: -by_agent_type[t]["cost"])
+total_agent_cost = sum(a.get('estimated_cost_usd', 0) for a in agent_data)
+total_agent_invocations = len(agent_data)
+
+agent_labels_js = json.dumps(agent_types_sorted)
+agent_costs_js  = json.dumps([round(by_agent_type[t]["cost"], 4) for t in agent_types_sorted])
+agent_counts_js = json.dumps([by_agent_type[t]["count"] for t in agent_types_sorted])
+
+# Conditional HTML blocks
+if agent_data:
+    agents_stat_html = f'''  <div class="stat">
+    <div class="stat-label">Agent cost</div>
+    <div class="stat-value">${total_agent_cost:.2f}</div>
+    <div class="stat-sub">{total_agent_invocations} invocations</div>
+  </div>'''
+    agents_section_html = f'''<div class="section">
+  <div class="section-header agents">Agents</div>
+  <div class="grid">
+    <div class="card">
+      <h2>Cost by agent type</h2>
+      <canvas id="agentCost"></canvas>
+    </div>
+    <div class="card">
+      <h2>Invocations by agent type</h2>
+      <canvas id="agentCount"></canvas>
+    </div>
+  </div>
+</div>
+
+'''
+    agents_js_constants = f'''const AGENT_LABELS = {agent_labels_js};
+const AGENT_COSTS  = {agent_costs_js};
+const AGENT_COUNTS = {agent_counts_js};'''
+    agents_js_charts = '''
+new Chart(document.getElementById('agentCost'), {
+  type: 'bar',
+  data: { labels: AGENT_LABELS,
+    datasets: [{ label: 'Cost ($)', data: AGENT_COSTS,
+      backgroundColor: '#f97316', borderRadius: 4 }] },
+  options: { ...baseOpts, plugins: { ...baseOpts.plugins,
+    tooltip: { callbacks: { label: ctx => ' $' + ctx.parsed.y.toFixed(4) } } } }
+});
+
+new Chart(document.getElementById('agentCount'), {
+  type: 'bar',
+  data: { labels: AGENT_LABELS,
+    datasets: [{ label: 'Invocations', data: AGENT_COUNTS,
+      backgroundColor: '#fb923c', borderRadius: 4 }] },
+  options: baseOpts
+});'''
+else:
+    agents_stat_html = ''
+    agents_section_html = ''
+    agents_js_constants = ''
+    agents_js_charts = ''
+
 html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -314,6 +387,7 @@ html = f"""<!DOCTYPE html>
   .section-header.cost  {{ border-left: 3px solid #6366f1; color: #818cf8; }}
   .section-header.time  {{ border-left: 3px solid #34d399; color: #34d399; }}
   .section-header.prompts {{ border-left: 3px solid #a78bfa; color: #a78bfa; }}
+  .section-header.agents {{ border-left: 3px solid #f97316; color: #fb923c; }}
   .grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }}
   .card {{ background: #1e2330; border: 1px solid #2d3748; border-radius: 10px;
            padding: 16px; }}
@@ -370,6 +444,7 @@ html = f"""<!DOCTYPE html>
     <div class="stat-value">{overall_efficiency}%</div>
     <div class="stat-sub">key / non-trivial (higher = better)</div>
   </div>
+{agents_stat_html}
 </div>
 
 <div class="section">
@@ -399,7 +474,7 @@ html = f"""<!DOCTYPE html>
   </div>
 </div>
 
-<div class="section">
+{agents_section_html}<div class="section">
   <div class="section-header prompts">Key Prompts</div>
   <div class="grid">
 
@@ -501,6 +576,7 @@ const AVG_DURATION_BY_DATE = {avg_duration_by_date_js};
 const SCATTER_DATA = {scatter_data_js};
 const TPM_DATA = {tpm_data_js};
 const DUR_HIST_RANGES = {dur_hist_ranges_js};
+{agents_js_constants}
 
 function formatDuration(s) {{
   if (s <= 0) return '0s';
@@ -757,6 +833,7 @@ new Chart(document.getElementById('promptStack'), {{
     }}
   }}
 }});
+{agents_js_charts}
 </script>
 </body>
 </html>

@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.3.0] - 2026-02-23
+
+### Added
+- **SubagentStop hook** — new `subagent-stop-hook.sh` fires when each spawned Task agent
+  finishes. Parses the agent's own transcript (`agent_transcript_path`), sums token usage
+  across all turns, and appends an entry to `agents.json` in the project's tracking directory.
+- **`agents.json`** — new per-invocation ledger: `agent_type`, `input_tokens`,
+  `output_tokens`, `cache_creation_tokens`, `cache_read_tokens`, `total_tokens`, `turns`,
+  `estimated_cost_usd`, `model`, `timestamp`, `session_id`, `agent_id`.
+- **Agents dashboard section** — new "Agents" section in `charts.html` (between Cost & Usage
+  and Key Prompts) with cost-by-agent-type and invocations-by-agent-type bar charts, plus
+  a stat tile showing total agent cost and invocation count. Section is hidden when no agent
+  data exists (older projects unaffected).
+
 ## [1.2.4] - 2026-02-22
 
 ### Added

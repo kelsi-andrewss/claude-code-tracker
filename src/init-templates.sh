@@ -8,6 +8,10 @@ cat > "$TRACKING_DIR/tokens.json" <<'EOF'
 []
 EOF
 
+cat > "$TRACKING_DIR/agents.json" <<'EOF'
+[]
+EOF
+
 cat > "$TRACKING_DIR/key-prompts.md" <<'EOF'
 # Prompt Journal
 

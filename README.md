@@ -13,6 +13,8 @@ After every session, it parses the transcript, updates a `tokens.json` ledger, r
 - **Per-model breakdown**: Opus vs Sonnet cost split
 - **Key prompts**: high-signal prompts you log manually, with category and context
 - **Prompt efficiency**: ratio of key prompts to total human messages
+- **Per-agent cost breakdown**: SubagentStop hook captures each spawned agent's token usage
+  separately — see which agent types (architect, quick-fixer, Explore, etc.) drive the most cost
 
 All data lives in `<project>/.claude/tracking/` alongside your code.
 
@@ -68,7 +70,8 @@ On first use in a project, the Stop hook auto-initializes `<project>/.claude/tra
 
 ```
 .claude/tracking/
-  tokens.json          # session data (auto-updated)
+  tokens.json          # main session data (auto-updated)
+  agents.json          # per-agent invocation data (auto-updated)
   charts.html          # Chart.js dashboard (auto-updated)
   key-prompts.md       # index of logged prompts
   key-prompts/         # one .md per day
@@ -90,6 +93,22 @@ xdg-open .claude/tracking/charts.html  # Linux
 ```
 
 The dashboard shows cumulative cost, cost per day, sessions, output tokens, model breakdown, and prompt analytics — all updated automatically after each session.
+
+---
+
+## Multi-agent tracking
+
+When using Claude Code's Task tool to spawn background agents, each agent's cost is tracked
+separately. The `SubagentStop` hook fires when each agent finishes and appends an entry to
+`agents.json` with:
+- `agent_type` — the subagent type (e.g. `architect`, `quick-fixer`, `Explore`, `Bash`)
+- token counts summed across all internal turns
+- `estimated_cost_usd` using the same list-price formula as main sessions
+
+The dashboard shows an "Agents" section with cost and invocation count by agent type, letting
+you identify which agent types are expensive relative to their output.
+
+No configuration needed — the SubagentStop hook is registered automatically on install.
 
 ---
 

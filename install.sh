@@ -36,6 +36,8 @@ else
   echo "Scripts installed to $INSTALL_DIR"
 fi
 
+SUBAGENT_HOOK_CMD="${HOOK_CMD/stop-hook.sh/subagent-stop-hook.sh}"
+
 # Install skills to ~/.claude/skills/
 if [[ -d "$SCRIPT_DIR/skills" ]]; then
   for skill_dir in "$SCRIPT_DIR/skills"/*/; do
@@ -47,11 +49,12 @@ if [[ -d "$SCRIPT_DIR/skills" ]]; then
 fi
 
 # Patch settings.json — add Stop hook if not already present
-python3 - "$SETTINGS" "$HOOK_CMD" <<'PYEOF'
+python3 - "$SETTINGS" "$HOOK_CMD" "$SUBAGENT_HOOK_CMD" <<'PYEOF'
 import sys, json, os
 
 settings_file = sys.argv[1]
 hook_cmd = sys.argv[2]
+subagent_hook_cmd = sys.argv[3]
 
 data = {}
 if os.path.exists(settings_file):
@@ -81,12 +84,23 @@ session_hooks[:] = [
 ]
 session_hooks.append({"hooks": [{"type": "command", "command": backfill_cmd, "timeout": 60, "async": True}]})
 
+# SubagentStop hook
+subagent_entry = {"type": "command", "command": subagent_hook_cmd, "timeout": 30, "async": True}
+subagent_hooks = hooks.setdefault("SubagentStop", [])
+subagent_hooks[:] = [
+    g for g in subagent_hooks
+    if not any("subagent-stop-hook.sh" in h.get("command", "") for h in g.get("hooks", []))
+]
+subagent_hooks.append({"hooks": [subagent_entry]})
+
 # permissions.allow — clean old entries and add current
 allow_entry = f"Bash({hook_cmd}*)"
+subagent_allow = f"Bash({subagent_hook_cmd}*)"
 perms = data.setdefault("permissions", {})
 allow_list = perms.setdefault("allow", [])
-allow_list[:] = [e for e in allow_list if "stop-hook.sh" not in e]
+allow_list[:] = [e for e in allow_list if "stop-hook.sh" not in e and "subagent-stop-hook.sh" not in e]
 allow_list.append(allow_entry)
+allow_list.append(subagent_allow)
 
 os.makedirs(os.path.dirname(os.path.abspath(settings_file)), exist_ok=True)
 with open(settings_file, 'w') as f:

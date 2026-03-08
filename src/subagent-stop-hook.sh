@@ -109,5 +109,10 @@ with open(agents_file, 'w', encoding='utf-8') as f:
     f.write('\n')
 PYEOF
 
+# Parse friction events from subagent JSONL
+python3 "$SCRIPT_DIR/parse_friction.py" "$TRANSCRIPT" "$TRACKING_DIR/friction.json" \
+  "$SESSION_ID" "$(basename "$PROJECT_ROOT")" "subagent" \
+  --agent-type "$AGENT_TYPE" --agent-id "$AGENT_ID" 2>/dev/null || true
+
 # Regenerate charts
 python3 "$SCRIPT_DIR/generate-charts.py" "$TRACKING_DIR/tokens.json" "$TRACKING_DIR/charts.html" 2>/dev/null || true

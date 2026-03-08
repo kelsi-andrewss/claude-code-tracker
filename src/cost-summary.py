@@ -125,4 +125,29 @@ days = len(by_date)
 if days > 1:
     print(f"\n  Avg cost/day:      ${total_cost/days:>11.2f}  over {days} days")
 
+# --- Friction summary ---
+friction_file = os.path.join(os.path.dirname(tokens_file), "friction.json")
+if os.path.exists(friction_file):
+    try:
+        with open(friction_file, encoding='utf-8') as f:
+            friction_data = json.load(f)
+        if friction_data:
+            print(f"\nFriction:")
+            friction_total = len(friction_data)
+            cat_counts = defaultdict(int)
+            tool_counts = defaultdict(int)
+            for fe in friction_data:
+                cat_counts[fe.get('category', 'unknown')] += 1
+                tn = fe.get('tool_name')
+                if tn:
+                    tool_counts[tn] += 1
+            top_cat = max(cat_counts, key=cat_counts.get)
+            print(f"  Total events:      {friction_total:>8}")
+            print(f"  Top category:      {top_cat:>8}  ({cat_counts[top_cat]} events)")
+            if tool_counts:
+                top_tool = max(tool_counts, key=tool_counts.get)
+                print(f"  Top tool:          {top_tool:>8}  ({tool_counts[top_tool]} events)")
+    except Exception:
+        pass
+
 print("=" * W)

@@ -226,8 +226,25 @@ if new_entries:
 total_turns = len(new_entries)
 print(f"{sessions_processed} session{'s' if sessions_processed != 1 else ''} processed, {total_turns} turn{'s' if total_turns != 1 else ''} written.")
 
+# Backfill friction events from the same transcripts
+from parse_friction import parse_friction, upsert_friction
+
+friction_file = os.path.join(tracking_dir, "friction.json")
+friction_count = 0
+for jf in jsonl_files:
+    session_id = os.path.splitext(os.path.basename(jf))[0]
+    try:
+        events = parse_friction(jf, session_id, project_name, "main")
+        upsert_friction(friction_file, session_id, events)
+        friction_count += len(events)
+    except Exception:
+        pass
+
+if friction_count:
+    print(f"{friction_count} friction event{'s' if friction_count != 1 else ''} backfilled.")
+
 # Regenerate charts if we added anything
-if new_entries:
+if new_entries or friction_count:
     script_dir = os.path.dirname(os.path.abspath(__file__))
     charts_html = os.path.join(tracking_dir, "charts.html")
     os.system(f'python3 "{script_dir}/generate-charts.py" "{tokens_file}" "{charts_html}" 2>/dev/null')

@@ -52,6 +52,21 @@ AGENT_DEFAULTS = {
     "model": "unknown",
 }
 
+SKILL_COLS = [
+    "session_id", "date", "project", "skill_name", "args",
+    "tool_use_id", "timestamp", "duration_seconds",
+    "success", "error_message",
+]
+
+SKILL_DEFAULTS = {
+    "args": None,
+    "tool_use_id": None,
+    "timestamp": None,
+    "duration_seconds": 0,
+    "success": 1,
+    "error_message": None,
+}
+
 SCHEMA_SQL = """\
 CREATE TABLE IF NOT EXISTS turns (
     session_id TEXT NOT NULL,
@@ -88,6 +103,22 @@ CREATE TABLE IF NOT EXISTS agents (
 );
 CREATE INDEX IF NOT EXISTS idx_agents_session ON agents(session_id);
 
+CREATE TABLE IF NOT EXISTS skills (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    date TEXT NOT NULL,
+    project TEXT NOT NULL,
+    skill_name TEXT NOT NULL,
+    args TEXT,
+    tool_use_id TEXT,
+    timestamp TEXT,
+    duration_seconds INTEGER DEFAULT 0,
+    success INTEGER DEFAULT 1,
+    error_message TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_skills_session ON skills(session_id);
+CREATE INDEX IF NOT EXISTS idx_skills_name ON skills(skill_name);
+
 CREATE TABLE IF NOT EXISTS metadata (
     key TEXT PRIMARY KEY,
     value TEXT
@@ -121,6 +152,17 @@ def _insert_agents(conn: sqlite3.Connection, entries: list[dict]) -> None:
     rows = []
     for e in entries:
         rows.append(tuple(e.get(col, AGENT_DEFAULTS.get(col)) for col in AGENT_COLS))
+    if rows:
+        conn.executemany(sql, rows)
+
+
+def _insert_skills(conn: sqlite3.Connection, entries: list[dict]) -> None:
+    """INSERT skills via executemany (always appends — autoincrement id)."""
+    placeholders = ", ".join(["?"] * len(SKILL_COLS))
+    sql = f"INSERT INTO skills ({', '.join(SKILL_COLS)}) VALUES ({placeholders})"
+    rows = []
+    for e in entries:
+        rows.append(tuple(e.get(col, SKILL_DEFAULTS.get(col)) for col in SKILL_COLS))
     if rows:
         conn.executemany(sql, rows)
 
@@ -215,6 +257,7 @@ def get_db(tracking_dir: str) -> sqlite3.Connection:
     except sqlite3.OperationalError:
         conn.execute("PRAGMA journal_mode=DELETE")
     conn.execute("PRAGMA synchronous=NORMAL")
+    conn.executescript(SCHEMA_SQL)
     _maybe_migrate(conn, tracking_dir)
     return conn
 
@@ -251,6 +294,28 @@ def get_all_agents(tracking_dir: str) -> list[dict]:
     """Return all agent rows as dicts (without the autoincrement id), ordered by id."""
     with get_db(tracking_dir) as conn:
         rows = conn.execute("SELECT * FROM agents ORDER BY id").fetchall()
+    result = []
+    for r in rows:
+        d = dict(r)
+        d.pop("id", None)
+        result.append(d)
+    return result
+
+
+def replace_session_skills(
+    tracking_dir: str, session_id: str, entries: list[dict]
+) -> None:
+    """Delete all skills for a session and insert replacements atomically."""
+    with get_db(tracking_dir) as conn:
+        conn.execute("DELETE FROM skills WHERE session_id = ?", (session_id,))
+        _insert_skills(conn, entries)
+        conn.commit()
+
+
+def get_all_skills(tracking_dir: str) -> list[dict]:
+    """Return all skill rows as dicts (without the autoincrement id), ordered by id."""
+    with get_db(tracking_dir) as conn:
+        rows = conn.execute("SELECT * FROM skills ORDER BY id").fetchall()
     result = []
     for r in rows:
         d = dict(r)

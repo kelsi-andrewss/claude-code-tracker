@@ -295,5 +295,70 @@ class TestCountTurnsForSession(unittest.TestCase):
         self.assertEqual(storage.count_turns_for_session(self.tmpdir, "s3"), 0)
 
 
+class TestSkillsTable(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        storage.init_db(self.tmpdir)
+
+    def _make_skill(self, **kwargs):
+        base = {
+            "session_id": "s1",
+            "date": "2026-01-01",
+            "project": "proj",
+            "skill_name": "commit",
+        }
+        base.update(kwargs)
+        return base
+
+    def test_table_created_on_init(self):
+        conn = sqlite3.connect(os.path.join(self.tmpdir, "tracking.db"))
+        tables = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()}
+        conn.close()
+        self.assertIn("skills", tables)
+
+    def test_replace_inserts_then_replaces(self):
+        entries = [self._make_skill(skill_name="commit")]
+        storage.replace_session_skills(self.tmpdir, "s1", entries)
+
+        all_skills = storage.get_all_skills(self.tmpdir)
+        self.assertEqual(len(all_skills), 1)
+        self.assertEqual(all_skills[0]["skill_name"], "commit")
+
+        # Replace with different data
+        entries2 = [self._make_skill(skill_name="audit")]
+        storage.replace_session_skills(self.tmpdir, "s1", entries2)
+
+        all_skills = storage.get_all_skills(self.tmpdir)
+        self.assertEqual(len(all_skills), 1)
+        self.assertEqual(all_skills[0]["skill_name"], "audit")
+
+    def test_get_all_strips_id(self):
+        storage.replace_session_skills(self.tmpdir, "s1", [self._make_skill()])
+        all_skills = storage.get_all_skills(self.tmpdir)
+        self.assertEqual(len(all_skills), 1)
+        self.assertNotIn("id", all_skills[0])
+        self.assertIn("skill_name", all_skills[0])
+
+    def test_schema_upgrade_on_existing_db(self):
+        """Opening an existing DB with get_db should create skills table."""
+        # Create a DB without the skills table
+        path = os.path.join(self.tmpdir, "tracking.db")
+        conn = sqlite3.connect(path)
+        conn.execute("CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT)")
+        conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('migrated_at', '2026-01-01')")
+        conn.commit()
+        conn.close()
+
+        # get_db should add the skills table via executescript
+        conn = storage.get_db(self.tmpdir)
+        tables = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()}
+        conn.close()
+        self.assertIn("skills", tables)
+
+
 if __name__ == "__main__":
     unittest.main()

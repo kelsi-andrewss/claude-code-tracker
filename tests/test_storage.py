@@ -146,6 +146,23 @@ class TestGetAllAgents(unittest.TestCase):
         self.assertNotIn("id", agents[0])
         self.assertIn("session_id", agents[0])
 
+    def test_multiple_sessions_returns_all(self):
+        storage.append_agent(self.tmpdir, _make_agent(
+            session_id="s1", agent_id="a1", timestamp="2026-01-01T00:00:00Z"))
+        storage.append_agent(self.tmpdir, _make_agent(
+            session_id="s1", agent_id="a2", timestamp="2026-01-01T00:01:00Z"))
+        storage.append_agent(self.tmpdir, _make_agent(
+            session_id="s2", agent_id="a3", timestamp="2026-01-01T00:02:00Z"))
+
+        agents = storage.get_all_agents(self.tmpdir)
+        self.assertEqual(len(agents), 3)
+        self.assertEqual(agents[0]["session_id"], "s1")
+        self.assertEqual(agents[0]["agent_id"], "a1")
+        self.assertEqual(agents[1]["session_id"], "s1")
+        self.assertEqual(agents[1]["agent_id"], "a2")
+        self.assertEqual(agents[2]["session_id"], "s2")
+        self.assertEqual(agents[2]["agent_id"], "a3")
+
 
 class TestMigration(unittest.TestCase):
     def setUp(self):
@@ -340,6 +357,25 @@ class TestSkillsTable(unittest.TestCase):
         self.assertEqual(len(all_skills), 1)
         self.assertNotIn("id", all_skills[0])
         self.assertIn("skill_name", all_skills[0])
+
+    def test_replace_preserves_other_sessions(self):
+        s1_skill = self._make_skill(session_id="s1", skill_name="commit")
+        s2_skill = self._make_skill(session_id="s2", skill_name="audit")
+        storage.replace_session_skills(self.tmpdir, "s1", [s1_skill])
+        storage.replace_session_skills(self.tmpdir, "s2", [s2_skill])
+
+        # Replace s1 with a different skill
+        storage.replace_session_skills(
+            self.tmpdir, "s1",
+            [self._make_skill(session_id="s1", skill_name="critique")],
+        )
+
+        all_skills = storage.get_all_skills(self.tmpdir)
+        self.assertEqual(len(all_skills), 2)
+        s1_skills = [s for s in all_skills if s["session_id"] == "s1"]
+        s2_skills = [s for s in all_skills if s["session_id"] == "s2"]
+        self.assertEqual(s1_skills[0]["skill_name"], "critique")
+        self.assertEqual(s2_skills[0]["skill_name"], "audit")
 
     def test_schema_upgrade_on_existing_db(self):
         """Opening an existing DB with get_db should create skills table."""

@@ -24,6 +24,7 @@ else:
 data = storage.get_all_turns(tracking_dir)
 agent_data = storage.get_all_agents(tracking_dir)
 skill_data = storage.get_all_skills(tracking_dir)
+compaction_data = storage.get_all_compactions(tracking_dir)
 
 # Load friction data (optional — file may not exist on older installs)
 friction_file = os.path.join(tracking_dir, 'friction.json')

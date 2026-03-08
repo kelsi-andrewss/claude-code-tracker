@@ -67,6 +67,17 @@ SKILL_DEFAULTS = {
     "error_message": None,
 }
 
+COMPACTION_COLS = [
+    "session_id", "date", "project", "timestamp",
+    "trigger", "pre_tokens",
+]
+
+COMPACTION_DEFAULTS = {
+    "timestamp": None,
+    "trigger": "auto",
+    "pre_tokens": 0,
+}
+
 SCHEMA_SQL = """\
 CREATE TABLE IF NOT EXISTS turns (
     session_id TEXT NOT NULL,
@@ -119,6 +130,17 @@ CREATE TABLE IF NOT EXISTS skills (
 CREATE INDEX IF NOT EXISTS idx_skills_session ON skills(session_id);
 CREATE INDEX IF NOT EXISTS idx_skills_name ON skills(skill_name);
 
+CREATE TABLE IF NOT EXISTS compactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    date TEXT NOT NULL,
+    project TEXT NOT NULL,
+    timestamp TEXT,
+    trigger TEXT DEFAULT 'auto',
+    pre_tokens INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_compactions_session ON compactions(session_id);
+
 CREATE TABLE IF NOT EXISTS metadata (
     key TEXT PRIMARY KEY,
     value TEXT
@@ -163,6 +185,17 @@ def _insert_skills(conn: sqlite3.Connection, entries: list[dict]) -> None:
     rows = []
     for e in entries:
         rows.append(tuple(e.get(col, SKILL_DEFAULTS.get(col)) for col in SKILL_COLS))
+    if rows:
+        conn.executemany(sql, rows)
+
+
+def _insert_compactions(conn: sqlite3.Connection, entries: list[dict]) -> None:
+    """INSERT compactions via executemany (always appends — autoincrement id)."""
+    placeholders = ", ".join(["?"] * len(COMPACTION_COLS))
+    sql = f"INSERT INTO compactions ({', '.join(COMPACTION_COLS)}) VALUES ({placeholders})"
+    rows = []
+    for e in entries:
+        rows.append(tuple(e.get(col, COMPACTION_DEFAULTS.get(col)) for col in COMPACTION_COLS))
     if rows:
         conn.executemany(sql, rows)
 
@@ -316,6 +349,28 @@ def get_all_skills(tracking_dir: str) -> list[dict]:
     """Return all skill rows as dicts (without the autoincrement id), ordered by id."""
     with get_db(tracking_dir) as conn:
         rows = conn.execute("SELECT * FROM skills ORDER BY id").fetchall()
+    result = []
+    for r in rows:
+        d = dict(r)
+        d.pop("id", None)
+        result.append(d)
+    return result
+
+
+def replace_session_compactions(
+    tracking_dir: str, session_id: str, entries: list[dict]
+) -> None:
+    """Delete all compactions for a session and insert replacements atomically."""
+    with get_db(tracking_dir) as conn:
+        conn.execute("DELETE FROM compactions WHERE session_id = ?", (session_id,))
+        _insert_compactions(conn, entries)
+        conn.commit()
+
+
+def get_all_compactions(tracking_dir: str) -> list[dict]:
+    """Return all compaction rows as dicts (without the autoincrement id), ordered by id."""
+    with get_db(tracking_dir) as conn:
+        rows = conn.execute("SELECT * FROM compactions ORDER BY id").fetchall()
     result = []
     for r in rows:
         d = dict(r)

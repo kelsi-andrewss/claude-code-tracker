@@ -6,11 +6,15 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 import storage
-from conftest import make_user_line, make_assistant_line, write_transcript, _ts
+from conftest import (
+    make_user_line, make_assistant_line, write_transcript, _ts,
+    make_skill_tool_use, make_skill_tool_result,
+)
 
 SRC_DIR = os.path.join(os.path.dirname(__file__), '..', 'src')
 WRITE_TURNS = os.path.join(SRC_DIR, 'write-turns.py')
 WRITE_AGENT = os.path.join(SRC_DIR, 'write-agent.py')
+PARSE_SKILLS = os.path.join(SRC_DIR, 'parse_skills.py')
 
 
 def _run_script(script, args):
@@ -231,6 +235,79 @@ class TestWriteAgentE2E:
         assert len(agents) == 1
         assert agents[0]['input_tokens'] == 300
         assert agents[0]['output_tokens'] == 150
+
+
+class TestParseSkillsE2E:
+
+    def test_full_pipeline(self, tmp_path):
+        lines = [
+            make_skill_tool_use('commit', 'tu-s1', _ts(0, 0), args='-m "fix"'),
+            make_skill_tool_result('tu-s1', _ts(0, 10), is_error=False, content='committed'),
+            make_skill_tool_use('review-pr', 'tu-s2', _ts(1, 0)),
+            make_skill_tool_result('tu-s2', _ts(1, 5), is_error=True, content='skill failed'),
+        ]
+        transcript = write_transcript(lines, str(tmp_path / 'skills.jsonl'))
+        tracking_dir = str(tmp_path / 'tracking')
+        os.makedirs(tracking_dir, exist_ok=True)
+        storage.init_db(tracking_dir)
+
+        result = _run_script(PARSE_SKILLS, [transcript, tracking_dir, 'sess-sk', 'test-proj'])
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+
+        skills = storage.get_all_skills(tracking_dir)
+        assert len(skills) == 2
+
+        assert skills[0]['skill_name'] == 'commit'
+        assert skills[0]['success'] == 1
+        assert skills[0]['error_message'] is None
+        assert skills[0]['session_id'] == 'sess-sk'
+        assert skills[0]['project'] == 'test-proj'
+        assert skills[0]['duration_seconds'] >= 0
+
+        assert skills[1]['skill_name'] == 'review-pr'
+        assert skills[1]['success'] == 0
+        assert skills[1]['error_message'] == 'skill failed'
+        assert skills[1]['duration_seconds'] >= 0
+
+    def test_empty_transcript_exits_zero(self, tmp_path):
+        transcript = write_transcript([], str(tmp_path / 'empty.jsonl'))
+        tracking_dir = str(tmp_path / 'tracking')
+        os.makedirs(tracking_dir, exist_ok=True)
+        storage.init_db(tracking_dir)
+
+        result = _run_script(PARSE_SKILLS, [transcript, tracking_dir, 'sess-empty', 'proj'])
+        assert result.returncode == 0
+
+        skills = storage.get_all_skills(tracking_dir)
+        assert len(skills) == 0
+
+    def test_idempotent_replace(self, tmp_path):
+        lines = [
+            make_skill_tool_use('commit', 'tu-s1', _ts(0, 0)),
+            make_skill_tool_result('tu-s1', _ts(0, 5), is_error=False, content='ok'),
+        ]
+        transcript = write_transcript(lines, str(tmp_path / 'skills.jsonl'))
+        tracking_dir = str(tmp_path / 'tracking')
+        os.makedirs(tracking_dir, exist_ok=True)
+        storage.init_db(tracking_dir)
+
+        _run_script(PARSE_SKILLS, [transcript, tracking_dir, 'sess-idem', 'proj'])
+        _run_script(PARSE_SKILLS, [transcript, tracking_dir, 'sess-idem', 'proj'])
+
+        skills = storage.get_all_skills(tracking_dir)
+        assert len(skills) == 1
+
+    def test_missing_args_exits_nonzero(self):
+        result = _run_script(PARSE_SKILLS, [])
+        assert result.returncode != 0
+
+    def test_missing_transcript_exits_nonzero(self, tmp_path):
+        tracking_dir = str(tmp_path / 'tracking')
+        os.makedirs(tracking_dir, exist_ok=True)
+        result = _run_script(PARSE_SKILLS, [
+            '/nonexistent/transcript.jsonl', tracking_dir, 'sess-x', 'proj',
+        ])
+        assert result.returncode != 0
 
 
 class TestFullPipeline:

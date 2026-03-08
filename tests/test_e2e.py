@@ -369,3 +369,54 @@ class TestFullPipeline:
         events = parse_friction(transcript, 'sess-mix', 'proj', 'cli')
         command_failed = [e for e in events if e['category'] == 'command_failed']
         assert len(command_failed) >= 1
+
+    def test_turns_skills_and_agents_from_same_session(self, tmp_path):
+        """Run all 3 write pipelines on a single transcript and verify
+        cross-table consistency: same session_id in turns, agents, skills."""
+        model = 'claude-opus-4-20250514'
+        lines = [
+            make_user_line('turn 0', _ts(0, 0)),
+            make_assistant_line(_ts(0, 10), model, 1000, 500, cache_creation=200, cache_read=300),
+            make_skill_tool_use('commit', 'sk-1', _ts(0, 12)),
+            make_skill_tool_result('sk-1', _ts(0, 15)),
+            make_user_line('turn 1', _ts(1, 0)),
+            make_assistant_line(_ts(1, 30), model, 2000, 1000, cache_creation=0, cache_read=500),
+        ]
+        transcript = write_transcript(lines, str(tmp_path / 'combined.jsonl'))
+        tracking_dir = str(tmp_path / 'tracking')
+        os.makedirs(tracking_dir, exist_ok=True)
+        storage.init_db(tracking_dir)
+
+        # Run all 3 scripts
+        r_turns = _run_script(WRITE_TURNS, [transcript, tracking_dir, 'sess-combined', 'test-proj'])
+        assert r_turns.returncode == 0, f"write-turns stderr: {r_turns.stderr}"
+
+        r_agent = _run_script(WRITE_AGENT, [transcript, tracking_dir, 'sess-combined', 'agent-combo', 'coder'])
+        assert r_agent.returncode == 0, f"write-agent stderr: {r_agent.stderr}"
+
+        r_skills = _run_script(PARSE_SKILLS, [transcript, tracking_dir, 'sess-combined', 'test-proj'])
+        assert r_skills.returncode == 0, f"parse_skills stderr: {r_skills.stderr}"
+
+        # Verify turns
+        turns = storage.get_all_turns(tracking_dir)
+        assert len(turns) == 2
+        assert turns[0]['session_id'] == 'sess-combined'
+        assert turns[0]['input_tokens'] == 1000
+        assert turns[1]['input_tokens'] == 2000
+
+        # Verify agents
+        agents = storage.get_all_agents(tracking_dir)
+        assert len(agents) == 1
+        assert agents[0]['session_id'] == 'sess-combined'
+        assert agents[0]['agent_type'] == 'coder'
+        assert agents[0]['turns'] == 2
+        assert agents[0]['input_tokens'] == 3000
+        assert agents[0]['output_tokens'] == 1500
+
+        # Verify skills
+        skills = storage.get_all_skills(tracking_dir)
+        assert len(skills) == 1
+        assert skills[0]['session_id'] == 'sess-combined'
+        assert skills[0]['skill_name'] == 'commit'
+        assert skills[0]['success'] == 1
+        assert skills[0]['duration_seconds'] == 3

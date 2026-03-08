@@ -1,5 +1,6 @@
 """Tests for src/write-agent.py — agent usage aggregation."""
 import json
+import re
 import sys
 import os
 
@@ -77,6 +78,26 @@ class TestAggregateAgentUsage:
         assert result['first_timestamp'] == _ts(0)
         assert result['model'] == 'claude-opus-4-20250514'
 
+    def test_malformed_json_lines_skipped(self, tmp_path):
+        """Bad JSON lines are skipped; valid assistant lines still summed."""
+        model = 'claude-opus-4-20250514'
+        path = str(tmp_path / 'mixed.jsonl')
+        with open(path, 'w') as f:
+            f.write('not json at all\n')
+            f.write(json.dumps(make_assistant_line(_ts(0, 5), model, 100, 50)) + '\n')
+            f.write('{broken json\n')
+            f.write(json.dumps(make_assistant_line(_ts(1, 5), model, 200, 100)) + '\n')
+        result = aggregate_agent_usage(path)
+        assert result['input_tokens'] == 300
+        assert result['output_tokens'] == 150
+        assert result['turns'] == 2
+
+    def test_missing_file_raises(self):
+        """aggregate_agent_usage on nonexistent file raises FileNotFoundError."""
+        import pytest
+        with pytest.raises(FileNotFoundError):
+            aggregate_agent_usage('/nonexistent/path/transcript.jsonl')
+
     def test_handles_non_dict_message_field(self, tmp_path):
         lines = [
             {'type': 'user', 'timestamp': _ts(0), 'message': 'not a dict'},
@@ -134,3 +155,16 @@ class TestBuildAgentEntry:
         }
         entry = build_agent_entry(usage_data, 's1', 'a1', 'coder')
         assert entry['timestamp'] == '2026-03-07T10:00:00Z'
+
+    def test_none_timestamp_uses_fallback(self):
+        """None first_timestamp triggers except branch, falls back to utcnow()."""
+        usage_data = {
+            'input_tokens': 100, 'output_tokens': 50,
+            'cache_creation_tokens': 0, 'cache_read_tokens': 0,
+            'total_tokens': 150, 'turns': 1,
+            'model': 'claude-opus-4-20250514',
+            'first_timestamp': None,
+        }
+        entry = build_agent_entry(usage_data, 's1', 'a1', 'coder')
+        # Fallback produces YYYY-MM-DDTHH:MM:SSZ format
+        assert re.match(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$', entry['timestamp'])

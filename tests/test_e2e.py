@@ -75,6 +75,67 @@ class TestWriteTurnsE2E:
         assert len(turns) == 1
 
 
+    def test_malformed_lines_still_write_valid_turns(self, tmp_path):
+        """3 valid turn pairs + 2 garbage lines → DB has exactly 3 rows."""
+        model = 'claude-opus-4-20250514'
+        transcript_path = str(tmp_path / 'mixed.jsonl')
+        with open(transcript_path, 'w') as f:
+            f.write('not json at all\n')
+            f.write(json.dumps(make_user_line('t0', _ts(0, 0))) + '\n')
+            f.write(json.dumps(make_assistant_line(_ts(0, 5), model, 100, 50)) + '\n')
+            f.write('{broken\n')
+            f.write(json.dumps(make_user_line('t1', _ts(1, 0))) + '\n')
+            f.write(json.dumps(make_assistant_line(_ts(1, 5), model, 200, 100)) + '\n')
+            f.write(json.dumps(make_user_line('t2', _ts(2, 0))) + '\n')
+            f.write(json.dumps(make_assistant_line(_ts(2, 5), model, 300, 150)) + '\n')
+        tracking_dir = str(tmp_path / 'tracking')
+        os.makedirs(tracking_dir, exist_ok=True)
+        storage.init_db(tracking_dir)
+
+        result = _run_script(WRITE_TURNS, [transcript_path, tracking_dir, 'sess-mixed', 'proj'])
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+
+        turns = storage.get_all_turns(tracking_dir)
+        assert len(turns) == 3
+        assert turns[0]['input_tokens'] == 100
+        assert turns[1]['input_tokens'] == 200
+        assert turns[2]['input_tokens'] == 300
+
+    def test_mixed_zero_and_nonzero_turns(self, tmp_path):
+        """1 valid turn + 1 zero-token turn → DB has 1 row."""
+        model = 'claude-opus-4-20250514'
+        lines = [
+            make_user_line('t0', _ts(0, 0)),
+            make_assistant_line(_ts(0, 5), model, 100, 50),
+            make_user_line('t1', _ts(1, 0)),
+            make_assistant_line(_ts(1, 5), model, 0, 0),
+        ]
+        transcript = write_transcript(lines, str(tmp_path / 'mixed_zero.jsonl'))
+        tracking_dir = str(tmp_path / 'tracking')
+        os.makedirs(tracking_dir, exist_ok=True)
+        storage.init_db(tracking_dir)
+
+        result = _run_script(WRITE_TURNS, [transcript, tracking_dir, 'sess-mz', 'proj'])
+        assert result.returncode == 0
+
+        turns = storage.get_all_turns(tracking_dir)
+        assert len(turns) == 1
+
+    def test_missing_args_exits_nonzero(self):
+        """write-turns.py with no args exits nonzero."""
+        result = _run_script(WRITE_TURNS, [])
+        assert result.returncode != 0
+
+    def test_missing_transcript_exits_nonzero(self, tmp_path):
+        """write-turns.py with nonexistent transcript path exits nonzero."""
+        tracking_dir = str(tmp_path / 'tracking')
+        os.makedirs(tracking_dir, exist_ok=True)
+        result = _run_script(WRITE_TURNS, [
+            '/nonexistent/transcript.jsonl', tracking_dir, 'sess-x', 'proj',
+        ])
+        assert result.returncode != 0
+
+
 class TestWriteAgentE2E:
 
     def test_full_pipeline(self, tmp_path):
@@ -101,6 +162,75 @@ class TestWriteAgentE2E:
         assert agents[0]['output_tokens'] == 150
         assert agents[0]['turns'] == 2
         assert agents[0]['agent_type'] == 'coder'
+
+
+    def test_malformed_lines_still_sum_valid_usage(self, tmp_path):
+        """2 valid assistant messages + 1 garbage line → DB agent row correct."""
+        model = 'claude-opus-4-20250514'
+        transcript_path = str(tmp_path / 'agent_mixed.jsonl')
+        with open(transcript_path, 'w') as f:
+            f.write(json.dumps(make_user_line('a', _ts(0))) + '\n')
+            f.write(json.dumps(make_assistant_line(_ts(0, 5), model, 100, 50)) + '\n')
+            f.write('{garbage line\n')
+            f.write(json.dumps(make_user_line('b', _ts(1))) + '\n')
+            f.write(json.dumps(make_assistant_line(_ts(1, 5), model, 200, 100)) + '\n')
+        tracking_dir = str(tmp_path / 'tracking')
+        os.makedirs(tracking_dir, exist_ok=True)
+        storage.init_db(tracking_dir)
+
+        result = _run_script(WRITE_AGENT, [
+            transcript_path, tracking_dir, 'sess-am', 'agent-1', 'coder',
+        ])
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+
+        agents = storage.get_all_agents(tracking_dir)
+        assert len(agents) == 1
+        assert agents[0]['input_tokens'] == 300
+        assert agents[0]['output_tokens'] == 150
+        assert agents[0]['turns'] == 2
+
+    def test_zero_token_exits_zero_no_rows(self, tmp_path):
+        """All-zero token assistant message → exit 0, 0 agent rows."""
+        lines = [
+            make_user_line('hi', _ts(0)),
+            make_assistant_line(_ts(0, 5), 'claude-opus-4-20250514', 0, 0),
+        ]
+        transcript = write_transcript(lines, str(tmp_path / 'zero.jsonl'))
+        tracking_dir = str(tmp_path / 'tracking')
+        os.makedirs(tracking_dir, exist_ok=True)
+        storage.init_db(tracking_dir)
+
+        result = _run_script(WRITE_AGENT, [
+            transcript, tracking_dir, 'sess-z', 'agent-z', 'coder',
+        ])
+        assert result.returncode == 0
+
+        agents = storage.get_all_agents(tracking_dir)
+        assert len(agents) == 0
+
+    def test_non_dict_message_still_sums(self, tmp_path):
+        """Mix of 'message': 'string' lines with valid assistant messages → DB sums valid only."""
+        model = 'claude-opus-4-20250514'
+        lines = [
+            {'type': 'user', 'timestamp': _ts(0), 'message': 'just a string'},
+            make_assistant_line(_ts(0, 5), model, 100, 50),
+            {'type': 'user', 'timestamp': _ts(1), 'message': 'another string'},
+            make_assistant_line(_ts(1, 5), model, 200, 100),
+        ]
+        transcript = write_transcript(lines, str(tmp_path / 'nondict.jsonl'))
+        tracking_dir = str(tmp_path / 'tracking')
+        os.makedirs(tracking_dir, exist_ok=True)
+        storage.init_db(tracking_dir)
+
+        result = _run_script(WRITE_AGENT, [
+            transcript, tracking_dir, 'sess-nd', 'agent-nd', 'coder',
+        ])
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+
+        agents = storage.get_all_agents(tracking_dir)
+        assert len(agents) == 1
+        assert agents[0]['input_tokens'] == 300
+        assert agents[0]['output_tokens'] == 150
 
 
 class TestFullPipeline:

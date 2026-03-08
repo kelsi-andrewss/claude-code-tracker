@@ -150,3 +150,33 @@ class TestParseSkills:
         result = parse_skills.parse_skills(path, 'sess1', 'proj')
 
         assert result[0]['args'] == 'epic-42'
+
+    def test_error_content_as_list_of_text_blocks(self, tmp_path):
+        """content as list of {type: 'text', text: ...} dicts gets joined."""
+        lines = [
+            make_user_line('go', _ts(0, 0)),
+            make_skill_tool_use('ship', 'tu1', _ts(0, 5)),
+            {
+                'type': 'user',
+                'timestamp': _ts(0, 10),
+                'message': {
+                    'role': 'user',
+                    'content': [{
+                        'type': 'tool_result',
+                        'tool_use_id': 'tu1',
+                        'is_error': True,
+                        'content': [
+                            {'type': 'text', 'text': 'Part one'},
+                            {'type': 'text', 'text': 'Part two'},
+                        ],
+                    }],
+                },
+            },
+            make_assistant_line(_ts(0, 15), 'claude-opus-4-20250514', 100, 50),
+        ]
+        path = write_transcript(lines, str(tmp_path / 't.jsonl'))
+        result = parse_skills.parse_skills(path, 'sess1', 'proj')
+
+        assert len(result) == 1
+        assert result[0]['success'] == 0
+        assert result[0]['error_message'] == 'Part one Part two'

@@ -15,6 +15,11 @@ After every session, it parses the transcript, updates a `tokens.json` ledger, r
 - **Prompt efficiency**: ratio of key prompts to total human messages
 - **Per-agent cost breakdown**: SubagentStop hook captures each spawned agent's token usage
   separately — see which agent types (architect, quick-fixer, Explore, etc.) drive the most cost
+- **Context compaction tracking**: counts and metadata for every context compaction event —
+  auto/manual trigger, pre-compaction token count, session distribution
+- **Skill invocation tracking**: per-skill success/error rates, duration, and timeline
+- **Friction event tracking**: tool errors, permission denials, corrections, retries — with
+  category breakdown, rate trends, and error classification
 
 All data lives in `<project>/.claude/tracking/` alongside your code.
 

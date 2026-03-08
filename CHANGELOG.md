@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.4.0-beta.4] - 2026-03-08
+
+### Added
+- **Context compaction tracking** — parse, store, and visualize context compaction events (auto/manual trigger, pre-compaction token count). Dashboard section with compactions per day (stacked bar), pre-compaction token scatter, and session distribution. CLI summary section. Full backfill support.
+- Skills, friction, and compaction tracking documented in README.
+
+### Changed
+- **Friction migrated from flat JSON to SQLite** — `friction.json` auto-migrated to `tracking.db` on first access. Consistent with turns, agents, and skills storage. Old file renamed to `friction.json.migrated`.
+
 ## [1.4.0-beta.3] - 2026-03-08
 
 ### Added

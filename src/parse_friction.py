@@ -112,93 +112,94 @@ def parse_friction(transcript_path, session_id, project, source,
         if not isinstance(msg, dict):
             continue
         content_blocks = msg.get('content', [])
-        if not isinstance(content_blocks, list):
-            continue
 
-        for block in content_blocks:
-            if not isinstance(block, dict):
-                continue
-            btype = block.get('type')
+        if isinstance(content_blocks, list):
+            for block in content_blocks:
+                if not isinstance(block, dict):
+                    continue
+                btype = block.get('type')
 
-            if btype == 'tool_use':
-                tool_id = block.get('id', '')
-                tool_name = block.get('name', '')
-                pending_tools[tool_id] = {
-                    'name': tool_name,
-                    'turn_index': turn_idx,
-                    'timestamp': ts,
-                }
-                if tool_name == 'Skill':
-                    skill_name = block.get('input', {}).get('skill', '')
-                    if skill_name:
-                        skill_stack.append((tool_id, skill_name))
+                if btype == 'tool_use':
+                    tool_id = block.get('id', '')
+                    tool_name = block.get('name', '')
+                    pending_tools[tool_id] = {
+                        'name': tool_name,
+                        'turn_index': turn_idx,
+                        'timestamp': ts,
+                    }
+                    if tool_name == 'Skill':
+                        skill_name = block.get('input', {}).get('skill', '')
+                        if skill_name:
+                            skill_stack.append((tool_id, skill_name))
 
-            elif btype == 'tool_result':
-                tool_id = block.get('tool_use_id', '')
-                is_error = block.get('is_error', False)
-                content = ''
-                raw_content = block.get('content', '')
-                if isinstance(raw_content, str):
-                    content = raw_content
-                elif isinstance(raw_content, list):
-                    content = ' '.join(
-                        c.get('text', '') for c in raw_content
-                        if isinstance(c, dict) and c.get('type') == 'text')
+                elif btype == 'tool_result':
+                    tool_id = block.get('tool_use_id', '')
+                    is_error = block.get('is_error', False)
+                    content = ''
+                    raw_content = block.get('content', '')
+                    if isinstance(raw_content, str):
+                        content = raw_content
+                    elif isinstance(raw_content, list):
+                        content = ' '.join(
+                            c.get('text', '') for c in raw_content
+                            if isinstance(c, dict) and c.get('type') == 'text')
 
-                tool_info = pending_tools.get(tool_id, {})
-                tool_name = tool_info.get('name', '')
+                    tool_info = pending_tools.get(tool_id, {})
+                    tool_name = tool_info.get('name', '')
 
-                # Pop skill stack if this is a Skill tool result
-                if skill_stack and skill_stack[-1][0] == tool_id:
-                    skill_stack.pop()
+                    # Pop skill stack if this is a Skill tool result
+                    if skill_stack and skill_stack[-1][0] == tool_id:
+                        skill_stack.pop()
 
-                content_lower = content.lower()
+                    content_lower = content.lower()
 
-                # Check if this is a retry of a previously errored tool
-                if tool_name and tool_name in last_error_by_tool:
+                    # Check if this is a retry of a previously errored tool
+                    if tool_name and tool_name in last_error_by_tool:
+                        if not is_error:
+                            events.append(make_event(ts, turn_idx, 'retry',
+                                                     tool_name, 'Retry succeeded', True))
+                            del last_error_by_tool[tool_name]
+                            continue
+                        else:
+                            events.append(make_event(ts, turn_idx, 'retry',
+                                                     tool_name, 'Retry failed', False))
+                            continue
+
                     if not is_error:
-                        events.append(make_event(ts, turn_idx, 'retry',
-                                                 tool_name, 'Retry succeeded', True))
-                        del last_error_by_tool[tool_name]
-                    else:
-                        events.append(make_event(ts, turn_idx, 'retry',
-                                                 tool_name, 'Retry failed', False))
+                        continue
 
-                if not is_error:
-                    continue
+                    # Priority 1: permission_denied
+                    if ("user doesn't want to proceed" in content_lower or
+                            "tool use was rejected" in content_lower):
+                        events.append(make_event(ts, turn_idx, 'permission_denied',
+                                                 tool_name, content))
+                        last_error_by_tool[tool_name] = tool_id
+                        continue
 
-                # Priority 1: permission_denied
-                if ("user doesn't want to proceed" in content_lower or
-                        "tool use was rejected" in content_lower):
-                    events.append(make_event(ts, turn_idx, 'permission_denied',
+                    # Priority 2: hook_blocked
+                    if 'pretooluse:' in content_lower and 'blocked' in content_lower:
+                        events.append(make_event(ts, turn_idx, 'hook_blocked',
+                                                 tool_name, content))
+                        last_error_by_tool[tool_name] = tool_id
+                        continue
+
+                    # Priority 3: cascade_error
+                    if 'sibling tool call errored' in content_lower:
+                        events.append(make_event(ts, turn_idx, 'cascade_error',
+                                                 tool_name, content))
+                        continue
+
+                    # Priority 4: command_failed
+                    if tool_name == 'Bash' and content.startswith('Exit code '):
+                        events.append(make_event(ts, turn_idx, 'command_failed',
+                                                 tool_name, content))
+                        last_error_by_tool[tool_name] = tool_id
+                        continue
+
+                    # Priority 5: tool_error (catch-all for is_error=true)
+                    events.append(make_event(ts, turn_idx, 'tool_error',
                                              tool_name, content))
                     last_error_by_tool[tool_name] = tool_id
-                    continue
-
-                # Priority 2: hook_blocked
-                if 'pretooluse:' in content_lower and 'blocked' in content_lower:
-                    events.append(make_event(ts, turn_idx, 'hook_blocked',
-                                             tool_name, content))
-                    last_error_by_tool[tool_name] = tool_id
-                    continue
-
-                # Priority 3: cascade_error
-                if 'sibling tool call errored' in content_lower:
-                    events.append(make_event(ts, turn_idx, 'cascade_error',
-                                             tool_name, content))
-                    continue
-
-                # Priority 4: command_failed
-                if tool_name == 'Bash' and content.startswith('Exit code '):
-                    events.append(make_event(ts, turn_idx, 'command_failed',
-                                             tool_name, content))
-                    last_error_by_tool[tool_name] = tool_id
-                    continue
-
-                # Priority 5: tool_error (catch-all for is_error=true)
-                events.append(make_event(ts, turn_idx, 'tool_error',
-                                         tool_name, content))
-                last_error_by_tool[tool_name] = tool_id
 
         # Check for corrections: user messages
         obj_type = obj.get('type')

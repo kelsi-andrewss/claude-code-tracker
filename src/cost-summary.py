@@ -138,28 +138,37 @@ if days > 1:
     print(f"\n  Avg cost/day:      ${total_cost/days:>11.2f}  over {days} days")
 
 # --- Friction summary ---
-friction_file = os.path.join(tracking_dir, "friction.json")
-if os.path.exists(friction_file):
-    try:
-        with open(friction_file, encoding='utf-8') as f:
-            friction_data = json.load(f)
-        if friction_data:
-            print(f"\nFriction:")
-            friction_total = len(friction_data)
-            cat_counts = defaultdict(int)
-            tool_counts = defaultdict(int)
-            for fe in friction_data:
-                cat_counts[fe.get('category', 'unknown')] += 1
-                tn = fe.get('tool_name')
-                if tn:
-                    tool_counts[tn] += 1
-            top_cat = max(cat_counts, key=cat_counts.get)
-            print(f"  Total events:      {friction_total:>8}")
-            print(f"  Top category:      {top_cat:>8}  ({cat_counts[top_cat]} events)")
-            if tool_counts:
-                top_tool = max(tool_counts, key=tool_counts.get)
-                print(f"  Top tool:          {top_tool:>8}  ({tool_counts[top_tool]} events)")
-    except Exception:
-        pass
+friction_data = storage.get_all_friction(tracking_dir)
+if friction_data:
+    print(f"\nFriction:")
+    friction_total = len(friction_data)
+    cat_counts = defaultdict(int)
+    tool_counts = defaultdict(int)
+    for fe in friction_data:
+        cat_counts[fe.get('category', 'unknown')] += 1
+        tn = fe.get('tool_name')
+        if tn:
+            tool_counts[tn] += 1
+    top_cat = max(cat_counts, key=cat_counts.get)
+    print(f"  Total events:      {friction_total:>8}")
+    print(f"  Top category:      {top_cat:>8}  ({cat_counts[top_cat]} events)")
+    if tool_counts:
+        top_tool = max(tool_counts, key=tool_counts.get)
+        print(f"  Top tool:          {top_tool:>8}  ({tool_counts[top_tool]} events)")
+
+# --- Compaction summary ---
+compaction_data = storage.get_all_compactions(tracking_dir)
+if compaction_data:
+    total_compactions = len(compaction_data)
+    auto_count = sum(1 for c in compaction_data if c.get('trigger', 'auto') == 'auto')
+    manual_count = total_compactions - auto_count
+    avg_pre = round(sum(c.get('pre_tokens', 0) for c in compaction_data) / total_compactions) if total_compactions > 0 else 0
+    sessions_compacted = len({c.get('session_id') for c in compaction_data})
+    pct_compacted = round(sessions_compacted / total_sessions * 100, 1) if total_sessions > 0 else 0
+    print(f"\nCompaction:")
+    print(f"  Total events:      {total_compactions:>8}")
+    print(f"  Auto / manual:     {auto_count:>5} / {manual_count}")
+    print(f"  Avg pre-tokens:    {avg_pre:>12,}")
+    print(f"  Sessions affected: {pct_compacted:>9.1f}%  ({sessions_compacted} of {total_sessions})")
 
 print("=" * W)

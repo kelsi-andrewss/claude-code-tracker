@@ -25,15 +25,8 @@ data = storage.get_all_turns(tracking_dir)
 agent_data = storage.get_all_agents(tracking_dir)
 skill_data = storage.get_all_skills(tracking_dir)
 
-# Load friction data (optional — file may not exist on older installs)
-friction_file = os.path.join(tracking_dir, 'friction.json')
-friction_data = []
-if os.path.exists(friction_file):
-    try:
-        with open(friction_file, encoding='utf-8') as f:
-            friction_data = json.load(f)
-    except:
-        pass
+friction_data = storage.get_all_friction(tracking_dir)
+compaction_data = storage.get_all_compactions(tracking_dir)
 
 def format_duration(seconds):
     if seconds <= 0:
@@ -793,6 +786,133 @@ else:
     error_js_constants = ''
     error_js_charts = ''
 
+# --- Compaction data aggregation ---
+compaction_by_date = defaultdict(lambda: {"auto": 0, "manual": 0})
+compaction_tokens = []
+compaction_per_session = defaultdict(int)
+for ce in compaction_data:
+    d = ce.get('date', 'unknown')
+    trig = ce.get('trigger', 'auto')
+    if trig == 'manual':
+        compaction_by_date[d]["manual"] += 1
+    else:
+        compaction_by_date[d]["auto"] += 1
+    pre_t = ce.get('pre_tokens', 0)
+    if pre_t > 0:
+        compaction_tokens.append({"x": ce.get('timestamp', '')[:10] if ce.get('timestamp') else 'unknown', "y": pre_t})
+    compaction_per_session[ce.get('session_id', '')] += 1
+
+total_compactions = len(compaction_data)
+total_auto = sum(1 for c in compaction_data if c.get('trigger', 'auto') == 'auto')
+total_manual = total_compactions - total_auto
+avg_pre_tokens = round(sum(c.get('pre_tokens', 0) for c in compaction_data) / total_compactions) if total_compactions > 0 else 0
+sessions_with_compaction = len([s for s in compaction_per_session if compaction_per_session[s] > 0])
+pct_sessions_compacted = round(sessions_with_compaction / total_sessions * 100, 1) if total_sessions > 0 else 0
+avg_per_session = round(total_compactions / total_sessions, 1) if total_sessions > 0 else 0
+
+compact_dates_sorted = sorted(compaction_by_date.keys())
+compact_dates_js = json.dumps(compact_dates_sorted)
+compact_auto_js = json.dumps([compaction_by_date[d]["auto"] for d in compact_dates_sorted])
+compact_manual_js = json.dumps([compaction_by_date[d]["manual"] for d in compact_dates_sorted])
+compact_scatter_js = json.dumps(compaction_tokens)
+
+compact_dist = {"0": 0, "1": 0, "2": 0, "3+": 0}
+all_session_ids = {e.get("session_id") for e in data}
+for sid in all_session_ids:
+    cnt = compaction_per_session.get(sid, 0)
+    if cnt == 0:
+        compact_dist["0"] += 1
+    elif cnt == 1:
+        compact_dist["1"] += 1
+    elif cnt == 2:
+        compact_dist["2"] += 1
+    else:
+        compact_dist["3+"] += 1
+compact_dist_labels_js = json.dumps(list(compact_dist.keys()))
+compact_dist_values_js = json.dumps(list(compact_dist.values()))
+
+if compaction_data:
+    compaction_stat_html = f'''  <div class="stat">
+    <div class="stat-label">Compactions</div>
+    <div class="stat-value">{total_compactions}</div>
+    <div class="stat-sub">{avg_per_session}/session, {pct_sessions_compacted}% of sessions</div>
+  </div>'''
+    compaction_section_html = f'''<div class="section">
+  <div class="section-header compaction">Context Compactions</div>
+  <div class="grid">
+    <div class="card">
+      <h2>Compactions per day</h2>
+      <canvas id="compactDay"></canvas>
+    </div>
+    <div class="card">
+      <h2>Pre-compaction token count</h2>
+      <canvas id="compactTokens"></canvas>
+    </div>
+    <div class="card">
+      <h2>Compactions per session</h2>
+      <canvas id="compactDist"></canvas>
+    </div>
+  </div>
+</div>
+
+'''
+    compaction_js_constants = f'''const COMPACT_DATES = {compact_dates_js};
+const COMPACT_AUTO = {compact_auto_js};
+const COMPACT_MANUAL = {compact_manual_js};
+const COMPACT_SCATTER = {compact_scatter_js};
+const COMPACT_DIST_LABELS = {compact_dist_labels_js};
+const COMPACT_DIST_VALUES = {compact_dist_values_js};'''
+    compaction_js_charts = '''
+// Compactions per day (stacked bar)
+new Chart(document.getElementById('compactDay'), {
+  type: 'bar',
+  data: {
+    labels: COMPACT_DATES,
+    datasets: [
+      { label: 'Auto', data: COMPACT_AUTO, backgroundColor: '#8b5cf6', borderRadius: 2 },
+      { label: 'Manual', data: COMPACT_MANUAL, backgroundColor: '#c084fc', borderRadius: 2 }
+    ]
+  },
+  options: { ...baseOpts, scales: { ...baseOpts.scales,
+    x: { ...baseOpts.scales.x, stacked: true },
+    y: { ...baseOpts.scales.y, stacked: true } } }
+});
+
+// Pre-compaction token count (scatter)
+new Chart(document.getElementById('compactTokens'), {
+  type: 'scatter',
+  data: {
+    datasets: [{ label: 'Pre-tokens', data: COMPACT_SCATTER,
+      backgroundColor: '#a78bfa', pointRadius: 5 }]
+  },
+  options: { ...baseOpts,
+    scales: {
+      x: { type: 'category', labels: [...new Set(COMPACT_SCATTER.map(p => p.x))],
+           ticks: { color: TEXT, font: { size: 10 } }, grid: { color: GRID } },
+      y: { ticks: { color: TEXT, font: { size: 10 },
+           callback: v => (v/1000).toFixed(0) + 'K' }, grid: { color: GRID } }
+    },
+    plugins: { ...baseOpts.plugins,
+      tooltip: { callbacks: { label: ctx => ' ' + ctx.parsed.y.toLocaleString() + ' tokens' } } }
+  }
+});
+
+// Compactions per session distribution
+new Chart(document.getElementById('compactDist'), {
+  type: 'bar',
+  data: {
+    labels: COMPACT_DIST_LABELS,
+    datasets: [{ label: 'Sessions', data: COMPACT_DIST_VALUES,
+      backgroundColor: '#8b5cf6', borderRadius: 4 }]
+  },
+  options: baseOpts
+});'''
+else:
+    compaction_stat_html = ''
+    compaction_section_html = ''
+    compaction_js_constants = ''
+    compaction_js_charts = ''
+
 html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -826,6 +946,7 @@ html = f"""<!DOCTYPE html>
   .section-header.friction {{ border-left: 3px solid #ef4444; color: #f87171; }}
   .section-header.errors {{ border-left: 3px solid #e11d48; color: #fb7185; }}
   .section-header.skills {{ border-left: 3px solid #f59e0b; color: #fbbf24; }}
+  .section-header.compaction {{ border-left: 3px solid #8b5cf6; color: #a78bfa; }}
   .grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }}
   .card {{ background: #1e2330; border: 1px solid #2d3748; border-radius: 10px;
            padding: 16px; }}
@@ -892,6 +1013,7 @@ html = f"""<!DOCTYPE html>
 {friction_stat_html}
 {retry_stat_html}
 {error_stat_html}
+{compaction_stat_html}
 </div>
 
 <div class="section">
@@ -926,7 +1048,7 @@ html = f"""<!DOCTYPE html>
   </div>
 </div>
 
-{agents_section_html}{skills_section_html}{friction_section_html}{error_section_html}<div class="section">
+{agents_section_html}{skills_section_html}{friction_section_html}{error_section_html}{compaction_section_html}<div class="section">
   <div class="section-header prompts">Key Prompts</div>
   <div class="grid">
 
@@ -1035,6 +1157,7 @@ const DUR_HIST_RANGES = {dur_hist_ranges_js};
 {skills_js_constants}
 {friction_js_constants}
 {error_js_constants}
+{compaction_js_constants}
 
 function formatDuration(s) {{
   if (s <= 0) return '0s';
@@ -1312,6 +1435,7 @@ new Chart(document.getElementById('promptStack'), {{
 {skills_js_charts}
 {friction_js_charts}
 {error_js_charts}
+{compaction_js_charts}
 </script>
 </body>
 </html>

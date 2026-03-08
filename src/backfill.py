@@ -189,15 +189,14 @@ total_turns = len(new_entries)
 print(f"{sessions_processed} session{'s' if sessions_processed != 1 else ''} processed, {total_turns} turn{'s' if total_turns != 1 else ''} written.")
 
 # Backfill friction events from the same transcripts
-from parse_friction import parse_friction, upsert_friction
+from parse_friction import parse_friction
 
-friction_file = os.path.join(tracking_dir, "friction.json")
 friction_count = 0
 for jf in jsonl_files:
     session_id = os.path.splitext(os.path.basename(jf))[0]
     try:
         events = parse_friction(jf, session_id, project_name, "main")
-        upsert_friction(friction_file, session_id, events)
+        storage.replace_session_friction(tracking_dir, session_id, events)
         friction_count += len(events)
     except Exception:
         pass
@@ -205,8 +204,24 @@ for jf in jsonl_files:
 if friction_count:
     print(f"{friction_count} friction event{'s' if friction_count != 1 else ''} backfilled.")
 
+# Backfill compaction events from the same transcripts
+from parse_compactions import parse_compactions as parse_compact_events
+
+compaction_count = 0
+for jf in jsonl_files:
+    session_id = os.path.splitext(os.path.basename(jf))[0]
+    try:
+        events = parse_compact_events(jf, session_id, project_name)
+        storage.replace_session_compactions(tracking_dir, session_id, events)
+        compaction_count += len(events)
+    except Exception:
+        pass
+
+if compaction_count:
+    print(f"{compaction_count} compaction event{'s' if compaction_count != 1 else ''} backfilled.")
+
 # Regenerate charts if we added anything
-if new_entries or friction_count:
+if new_entries or friction_count or compaction_count:
     script_dir = os.path.dirname(os.path.abspath(__file__))
     charts_html = os.path.join(tracking_dir, "charts.html")
     os.system(f'python3 "{script_dir}/generate-charts.py" "{tracking_dir}" "{charts_html}" 2>/dev/null')

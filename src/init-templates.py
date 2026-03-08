@@ -15,6 +15,7 @@ def main():
     templates = {
         'tokens.json': [],
         'agents.json': [],
+        'friction.json': [],
     }
 
     for filename, default in templates.items():

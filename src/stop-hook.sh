@@ -203,8 +203,21 @@ with open(tokens_file, 'w', encoding='utf-8') as f:
     f.write('\n')
 PYEOF
 
+# Parse friction events from JSONL
+python3 "$SCRIPT_DIR/parse_friction.py" "$TRANSCRIPT" "$TRACKING_DIR/friction.json" \
+  "$SESSION_ID" "$(basename "$PROJECT_ROOT")" "main" 2>/dev/null || true
+
 # Regenerate charts
 python3 "$SCRIPT_DIR/generate-charts.py" "$TRACKING_DIR/tokens.json" "$TRACKING_DIR/charts.html" 2>/dev/null || true
 
-# Regenerate key-prompts index
-python3 "$SCRIPT_DIR/update-prompts-index.py" "$TRACKING_DIR" 2>/dev/null || true
+# Regenerate key-prompts index + shadow to OpenMemory
+OM_DB="$HOME/.claude/.claude/openmemory.sqlite"
+LEARNINGS="$HOME/.claude/tool-learnings.md"
+OM_ARGS=""
+if [[ -f "$OM_DB" ]]; then
+  OM_ARGS="--om-db $OM_DB"
+  if [[ -f "$LEARNINGS" ]]; then
+    OM_ARGS="$OM_ARGS --learnings $LEARNINGS"
+  fi
+fi
+python3 "$SCRIPT_DIR/update-prompts-index.py" "$TRACKING_DIR" $OM_ARGS 2>/dev/null || true

@@ -21,6 +21,16 @@ if os.path.exists(agents_file):
     except:
         pass
 
+# Load friction data (optional — file may not exist on older installs)
+friction_file = os.path.join(os.path.dirname(os.path.abspath(tokens_file)), 'friction.json')
+friction_data = []
+if os.path.exists(friction_file):
+    try:
+        with open(friction_file, encoding='utf-8') as f:
+            friction_data = json.load(f)
+    except:
+        pass
+
 def format_duration(seconds):
     if seconds <= 0:
         return "0m"
@@ -358,6 +368,155 @@ else:
     agents_js_constants = ''
     agents_js_charts = ''
 
+# --- Friction data aggregation ---
+FRICTION_CAT_COLORS = {
+    "permission_denied": "#dc2626",
+    "hook_blocked":      "#b91c1c",
+    "cascade_error":     "#f97316",
+    "command_failed":    "#eab308",
+    "tool_error":        "#ef4444",
+    "correction":        "#8b5cf6",
+    "retry":             "#06b6d4",
+}
+FRICTION_DEFAULT_COLOR = "#94a3b8"
+
+friction_by_date = defaultdict(lambda: {"main": 0, "subagent": 0})
+friction_by_category = defaultdict(int)
+friction_by_tool = defaultdict(int)
+for fe in friction_data:
+    d = fe.get('date', 'unknown')
+    src = fe.get('source', 'main')
+    if src == 'subagent':
+        friction_by_date[d]["subagent"] += 1
+    else:
+        friction_by_date[d]["main"] += 1
+    friction_by_category[fe.get('category', 'unknown')] += 1
+    tn = fe.get('tool_name')
+    if tn:
+        friction_by_tool[tn] += 1
+
+total_friction = len(friction_data)
+friction_rate = round(total_friction / total_turns * 100, 1) if total_turns > 0 else 0
+
+friction_dates_sorted = sorted(friction_by_date.keys())
+friction_dates_js = json.dumps(friction_dates_sorted)
+friction_main_by_date_js = json.dumps([friction_by_date[d]["main"] for d in friction_dates_sorted])
+friction_sub_by_date_js = json.dumps([friction_by_date[d]["subagent"] for d in friction_dates_sorted])
+
+friction_cats_sorted = sorted(friction_by_category.keys(), key=lambda c: -friction_by_category[c])
+friction_cat_labels_js = json.dumps(friction_cats_sorted)
+friction_cat_values_js = json.dumps([friction_by_category[c] for c in friction_cats_sorted])
+friction_cat_colors_js = json.dumps([FRICTION_CAT_COLORS.get(c, FRICTION_DEFAULT_COLOR) for c in friction_cats_sorted])
+
+friction_tools_sorted = sorted(friction_by_tool.keys(), key=lambda t: -friction_by_tool[t])
+friction_tool_labels_js = json.dumps(friction_tools_sorted)
+friction_tool_values_js = json.dumps([friction_by_tool[t] for t in friction_tools_sorted])
+
+# Friction rate trend per day (events per 100 prompts)
+friction_rate_dates = sorted(set(friction_dates_sorted) & set(dates))
+friction_rate_values = []
+for d in friction_rate_dates:
+    day_friction = friction_by_date[d]["main"] + friction_by_date[d]["subagent"]
+    day_turns = by_date[d]["turns"] if d in by_date else 0
+    friction_rate_values.append(round(day_friction / day_turns * 100, 1) if day_turns > 0 else 0)
+friction_rate_dates_js = json.dumps(friction_rate_dates)
+friction_rate_values_js = json.dumps(friction_rate_values)
+
+if friction_data:
+    friction_stat_html = f'''  <div class="stat">
+    <div class="stat-label">Friction events</div>
+    <div class="stat-value">{total_friction}</div>
+    <div class="stat-sub">{friction_rate} per 100 prompts</div>
+  </div>'''
+    friction_section_html = f'''<div class="section">
+  <div class="section-header friction">Friction</div>
+  <div class="grid">
+    <div class="card">
+      <h2>Friction per day</h2>
+      <canvas id="frictionDay"></canvas>
+    </div>
+    <div class="card">
+      <h2>Friction by category</h2>
+      <canvas id="frictionCat"></canvas>
+    </div>
+    <div class="card">
+      <h2>Friction by tool</h2>
+      <canvas id="frictionTool"></canvas>
+    </div>
+    <div class="card">
+      <h2>Friction rate trend</h2>
+      <canvas id="frictionRate"></canvas>
+    </div>
+  </div>
+</div>
+
+'''
+    friction_js_constants = f'''const FRICTION_DATES = {friction_dates_js};
+const FRICTION_MAIN = {friction_main_by_date_js};
+const FRICTION_SUB = {friction_sub_by_date_js};
+const FRICTION_CAT_LABELS = {friction_cat_labels_js};
+const FRICTION_CAT_VALUES = {friction_cat_values_js};
+const FRICTION_CAT_COLORS = {friction_cat_colors_js};
+const FRICTION_TOOL_LABELS = {friction_tool_labels_js};
+const FRICTION_TOOL_VALUES = {friction_tool_values_js};
+const FRICTION_RATE_DATES = {friction_rate_dates_js};
+const FRICTION_RATE_VALUES = {friction_rate_values_js};'''
+    friction_js_charts = '''
+// Friction per day (stacked bar)
+new Chart(document.getElementById('frictionDay'), {
+  type: 'bar',
+  data: {
+    labels: FRICTION_DATES,
+    datasets: [
+      { label: 'Main session', data: FRICTION_MAIN, backgroundColor: '#ef4444', borderRadius: 2 },
+      { label: 'Subagent', data: FRICTION_SUB, backgroundColor: '#f97316', borderRadius: 2 }
+    ]
+  },
+  options: { ...baseOpts, scales: { ...baseOpts.scales,
+    x: { ...baseOpts.scales.x, stacked: true },
+    y: { ...baseOpts.scales.y, stacked: true } } }
+});
+
+// Friction by category (horizontal bar)
+new Chart(document.getElementById('frictionCat'), {
+  type: 'bar',
+  data: {
+    labels: FRICTION_CAT_LABELS,
+    datasets: [{ label: 'Events', data: FRICTION_CAT_VALUES,
+      backgroundColor: FRICTION_CAT_COLORS, borderRadius: 4 }]
+  },
+  options: { ...baseOpts, indexAxis: 'y' }
+});
+
+// Friction by tool (bar)
+new Chart(document.getElementById('frictionTool'), {
+  type: 'bar',
+  data: {
+    labels: FRICTION_TOOL_LABELS,
+    datasets: [{ label: 'Events', data: FRICTION_TOOL_VALUES,
+      backgroundColor: '#ef4444', borderRadius: 4 }]
+  },
+  options: baseOpts
+});
+
+// Friction rate trend (line)
+new Chart(document.getElementById('frictionRate'), {
+  type: 'line',
+  data: {
+    labels: FRICTION_RATE_DATES,
+    datasets: [{ label: 'Per 100 prompts', data: FRICTION_RATE_VALUES,
+      borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.15)',
+      fill: true, tension: 0.3, pointRadius: 3 }]
+  },
+  options: { ...baseOpts, plugins: { ...baseOpts.plugins,
+    tooltip: { callbacks: { label: ctx => ' ' + ctx.parsed.y + ' per 100 prompts' } } } }
+});'''
+else:
+    friction_stat_html = ''
+    friction_section_html = ''
+    friction_js_constants = ''
+    friction_js_charts = ''
+
 html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -388,6 +547,7 @@ html = f"""<!DOCTYPE html>
   .section-header.time  {{ border-left: 3px solid #34d399; color: #34d399; }}
   .section-header.prompts {{ border-left: 3px solid #a78bfa; color: #a78bfa; }}
   .section-header.agents {{ border-left: 3px solid #f97316; color: #fb923c; }}
+  .section-header.friction {{ border-left: 3px solid #ef4444; color: #f87171; }}
   .grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }}
   .card {{ background: #1e2330; border: 1px solid #2d3748; border-radius: 10px;
            padding: 16px; }}
@@ -445,6 +605,7 @@ html = f"""<!DOCTYPE html>
     <div class="stat-sub">key / non-trivial (higher = better)</div>
   </div>
 {agents_stat_html}
+{friction_stat_html}
 </div>
 
 <div class="section">
@@ -474,7 +635,7 @@ html = f"""<!DOCTYPE html>
   </div>
 </div>
 
-{agents_section_html}<div class="section">
+{agents_section_html}{friction_section_html}<div class="section">
   <div class="section-header prompts">Key Prompts</div>
   <div class="grid">
 
@@ -577,6 +738,7 @@ const SCATTER_DATA = {scatter_data_js};
 const TPM_DATA = {tpm_data_js};
 const DUR_HIST_RANGES = {dur_hist_ranges_js};
 {agents_js_constants}
+{friction_js_constants}
 
 function formatDuration(s) {{
   if (s <= 0) return '0s';
@@ -834,6 +996,7 @@ new Chart(document.getElementById('promptStack'), {{
   }}
 }});
 {agents_js_charts}
+{friction_js_charts}
 </script>
 </body>
 </html>

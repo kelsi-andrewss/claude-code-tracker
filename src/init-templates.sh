@@ -12,6 +12,10 @@ cat > "$TRACKING_DIR/agents.json" <<'EOF'
 []
 EOF
 
+cat > "$TRACKING_DIR/friction.json" <<'EOF'
+[]
+EOF
+
 cat > "$TRACKING_DIR/key-prompts.md" <<'EOF'
 # Prompt Journal
 

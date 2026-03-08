@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.4.0-beta.1] - 2026-03-08
+## [1.4.0-beta.3] - 2026-03-08
 
 ### Added
 - **SQLite storage backend** (`storage.py`) — replaces JSON file writes with `tracker.db`, includes transparent migration from existing JSON data.

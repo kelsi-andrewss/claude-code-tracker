@@ -13,6 +13,7 @@ already present are skipped.
 import sys, json, os, glob
 from datetime import datetime
 from platform_utils import get_transcripts_dir, slugify_path
+from cost import compute_cost
 import storage
 
 project_root = os.path.abspath(sys.argv[1])
@@ -113,10 +114,7 @@ def compute_turns(msgs, usages, first_ts, model, session_id, project_name):
                 except Exception:
                     pass
 
-                if "opus" in model:
-                    cost = inp * 15 / 1e6 + cache_create * 18.75 / 1e6 + cache_read * 1.50 / 1e6 + out * 75 / 1e6
-                else:
-                    cost = inp * 3 / 1e6 + cache_create * 3.75 / 1e6 + cache_read * 0.30 / 1e6 + out * 15 / 1e6
+                cost = compute_cost(inp, out, cache_create, cache_read, model)
 
                 # Turn timestamp = user message timestamp
                 turn_ts = user_ts

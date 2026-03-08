@@ -57,6 +57,10 @@ python3 "$SCRIPT_DIR/write-turns.py" "$TRANSCRIPT" "$TRACKING_DIR" "$SESSION_ID"
 python3 "$SCRIPT_DIR/parse_friction.py" "$TRANSCRIPT" "$TRACKING_DIR/friction.json" \
   "$SESSION_ID" "$(basename "$PROJECT_ROOT")" "main" 2>/dev/null || true
 
+# Parse skill invocations from JSONL
+python3 "$SCRIPT_DIR/parse_skills.py" "$TRANSCRIPT" "$TRACKING_DIR" \
+  "$SESSION_ID" "$(basename "$PROJECT_ROOT")" 2>/dev/null || true
+
 # Regenerate charts
 python3 "$SCRIPT_DIR/generate-charts.py" "$TRACKING_DIR" "$TRACKING_DIR/charts.html" 2>/dev/null || true
 

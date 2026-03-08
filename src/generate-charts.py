@@ -23,6 +23,7 @@ else:
 
 data = storage.get_all_turns(tracking_dir)
 agent_data = storage.get_all_agents(tracking_dir)
+skill_data = storage.get_all_skills(tracking_dir)
 
 # Load friction data (optional — file may not exist on older installs)
 friction_file = os.path.join(tracking_dir, 'friction.json')
@@ -391,6 +392,101 @@ else:
     agents_js_constants = ''
     agents_js_charts = ''
 
+# --- Skill data aggregation ---
+by_skill_name = defaultdict(lambda: {"count": 0, "success": 0, "fail": 0, "duration": 0})
+skill_by_date = defaultdict(int)
+for sk in skill_data:
+    name = sk.get('skill_name', 'unknown')
+    by_skill_name[name]["count"] += 1
+    if sk.get('success', 1):
+        by_skill_name[name]["success"] += 1
+    else:
+        by_skill_name[name]["fail"] += 1
+    by_skill_name[name]["duration"] += sk.get('duration_seconds', 0)
+    skill_by_date[sk.get('date', 'unknown')] += 1
+
+skill_names_sorted = sorted(by_skill_name.keys(), key=lambda n: -by_skill_name[n]["count"])
+total_skill_invocations = sum(by_skill_name[n]["count"] for n in by_skill_name)
+total_skill_success = sum(by_skill_name[n]["success"] for n in by_skill_name)
+skill_success_rate = round(total_skill_success / total_skill_invocations * 100, 1) if total_skill_invocations > 0 else 0
+
+skill_labels_js = json.dumps(skill_names_sorted)
+skill_counts_js = json.dumps([by_skill_name[n]["count"] for n in skill_names_sorted])
+skill_success_js = json.dumps([by_skill_name[n]["success"] for n in skill_names_sorted])
+skill_fail_js = json.dumps([by_skill_name[n]["fail"] for n in skill_names_sorted])
+
+skill_timeline_dates = sorted(skill_by_date.keys())
+skill_timeline_dates_js = json.dumps(skill_timeline_dates)
+skill_timeline_values_js = json.dumps([skill_by_date[d] for d in skill_timeline_dates])
+
+if skill_data:
+    skills_stat_html = f'''  <div class="stat">
+    <div class="stat-label">Skill invocations</div>
+    <div class="stat-value">{total_skill_invocations}</div>
+    <div class="stat-sub">{skill_success_rate}% success rate</div>
+  </div>'''
+    skills_section_html = f'''<div class="section">
+  <div class="section-header skills">Skills</div>
+  <div class="grid">
+    <div class="card">
+      <h2>Invocations by skill</h2>
+      <canvas id="skillCount"></canvas>
+    </div>
+    <div class="card">
+      <h2>Success / fail by skill</h2>
+      <canvas id="skillSuccess"></canvas>
+    </div>
+    <div class="card wide">
+      <h2>Skill invocations over time</h2>
+      <canvas id="skillTimeline"></canvas>
+    </div>
+  </div>
+</div>
+
+'''
+    skills_js_constants = f'''const SKILL_LABELS = {skill_labels_js};
+const SKILL_COUNTS = {skill_counts_js};
+const SKILL_SUCCESS = {skill_success_js};
+const SKILL_FAIL = {skill_fail_js};
+const SKILL_TIMELINE_DATES = {skill_timeline_dates_js};
+const SKILL_TIMELINE_VALUES = {skill_timeline_values_js};'''
+    skills_js_charts = '''
+new Chart(document.getElementById('skillCount'), {
+  type: 'bar',
+  data: { labels: SKILL_LABELS,
+    datasets: [{ label: 'Invocations', data: SKILL_COUNTS,
+      backgroundColor: '#f59e0b', borderRadius: 4 }] },
+  options: { ...baseOpts, indexAxis: 'y' }
+});
+
+new Chart(document.getElementById('skillSuccess'), {
+  type: 'bar',
+  data: { labels: SKILL_LABELS,
+    datasets: [
+      { label: 'Success', data: SKILL_SUCCESS, backgroundColor: '#f59e0b', borderRadius: 2 },
+      { label: 'Fail', data: SKILL_FAIL, backgroundColor: '#92400e', borderRadius: 2 }
+    ] },
+  options: { ...baseOpts, scales: { ...baseOpts.scales,
+    x: { ...baseOpts.scales.x, stacked: true },
+    y: { ...baseOpts.scales.y, stacked: true } } }
+});
+
+new Chart(document.getElementById('skillTimeline'), {
+  type: 'line',
+  data: {
+    labels: SKILL_TIMELINE_DATES,
+    datasets: [{ label: 'Invocations', data: SKILL_TIMELINE_VALUES,
+      borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.15)',
+      fill: true, tension: 0.3, pointRadius: 3 }]
+  },
+  options: baseOpts
+});'''
+else:
+    skills_stat_html = ''
+    skills_section_html = ''
+    skills_js_constants = ''
+    skills_js_charts = ''
+
 # --- Friction data aggregation ---
 FRICTION_CAT_COLORS = {
     "permission_denied": "#dc2626",
@@ -729,6 +825,7 @@ html = f"""<!DOCTYPE html>
   .section-header.agents {{ border-left: 3px solid #f97316; color: #fb923c; }}
   .section-header.friction {{ border-left: 3px solid #ef4444; color: #f87171; }}
   .section-header.errors {{ border-left: 3px solid #e11d48; color: #fb7185; }}
+  .section-header.skills {{ border-left: 3px solid #f59e0b; color: #fbbf24; }}
   .grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }}
   .card {{ background: #1e2330; border: 1px solid #2d3748; border-radius: 10px;
            padding: 16px; }}
@@ -791,6 +888,7 @@ html = f"""<!DOCTYPE html>
     <div class="stat-sub">key / non-trivial (higher = better)</div>
   </div>
 {agents_stat_html}
+{skills_stat_html}
 {friction_stat_html}
 {retry_stat_html}
 {error_stat_html}
@@ -828,7 +926,7 @@ html = f"""<!DOCTYPE html>
   </div>
 </div>
 
-{agents_section_html}{friction_section_html}{error_section_html}<div class="section">
+{agents_section_html}{skills_section_html}{friction_section_html}{error_section_html}<div class="section">
   <div class="section-header prompts">Key Prompts</div>
   <div class="grid">
 
@@ -934,6 +1032,7 @@ const SCATTER_DATA = {scatter_data_js};
 const TPM_DATA = {tpm_data_js};
 const DUR_HIST_RANGES = {dur_hist_ranges_js};
 {agents_js_constants}
+{skills_js_constants}
 {friction_js_constants}
 {error_js_constants}
 
@@ -1210,6 +1309,7 @@ new Chart(document.getElementById('promptStack'), {{
   }}
 }});
 {agents_js_charts}
+{skills_js_charts}
 {friction_js_charts}
 {error_js_charts}
 </script>

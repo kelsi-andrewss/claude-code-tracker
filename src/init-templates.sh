@@ -1,16 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TRACKING_DIR="$1"
 mkdir -p "$TRACKING_DIR"
 mkdir -p "$TRACKING_DIR/key-prompts"
 
-cat > "$TRACKING_DIR/tokens.json" <<'EOF'
-[]
-EOF
-
-cat > "$TRACKING_DIR/agents.json" <<'EOF'
-[]
-EOF
+# Initialize SQLite database (replaces tokens.json / agents.json)
+python3 "$SCRIPT_DIR/storage.py" --init "$TRACKING_DIR"
 
 cat > "$TRACKING_DIR/key-prompts.md" <<'EOF'
 # Prompt Journal

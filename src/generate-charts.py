@@ -1,23 +1,36 @@
 #!/usr/bin/env python3
 """
-Generates tracking/charts.html from tokens.json + key-prompts/ folder.
+Generates tracking/charts.html from SQLite storage + key-prompts/ folder.
 Called by stop-hook.sh after each session update.
 
-Usage: python3 generate-charts.py <tokens.json> <output.html>
+Usage: python3 generate-charts.py <tracking_dir_or_tokens.json> <output.html>
 """
 import sys, json, os, re, glob
 from collections import defaultdict
 
-tokens_file = sys.argv[1]
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPT_DIR)
+import storage
+
+arg1 = sys.argv[1]
 output_file = sys.argv[2]
 
-# Load agent data (optional — file may not exist on older installs)
-agents_file = os.path.join(os.path.dirname(os.path.abspath(tokens_file)), 'agents.json')
-agent_data = []
-if os.path.exists(agents_file):
+# Backward compat: accept either tokens.json path or tracking directory
+if arg1.endswith('.json'):
+    tracking_dir = os.path.dirname(os.path.abspath(arg1))
+else:
+    tracking_dir = os.path.abspath(arg1)
+
+data = storage.get_all_turns(tracking_dir)
+agent_data = storage.get_all_agents(tracking_dir)
+
+# Load friction data (optional — file may not exist on older installs)
+friction_file = os.path.join(tracking_dir, 'friction.json')
+friction_data = []
+if os.path.exists(friction_file):
     try:
-        with open(agents_file, encoding='utf-8') as f:
-            agent_data = json.load(f)
+        with open(friction_file, encoding='utf-8') as f:
+            friction_data = json.load(f)
     except:
         pass
 
@@ -30,9 +43,6 @@ def format_duration(seconds):
     if h > 0:
         return f"{h}h {m}m"
     return f"{m}m {s}s"
-
-with open(tokens_file, encoding='utf-8') as f:
-    data = json.load(f)
 
 if not data:
     sys.exit(0)
@@ -82,6 +92,7 @@ total_turns = len(data)
 total_sessions = len({e.get("session_id") for e in data})
 sessions_with_data = len({e.get("session_id") for e in data if e.get("total_tokens", 0) > 0})
 total_output = sum(e.get("output_tokens", 0) for e in data)
+total_input = sum(e.get("input_tokens", 0) for e in data)
 total_cache_read = sum(e.get("cache_read_tokens", 0) for e in data)
 total_all_tokens = sum(e.get("total_tokens", 0) for e in data)
 cache_pct = round(total_cache_read / total_all_tokens * 100, 1) if total_all_tokens > 0 else 0
@@ -91,7 +102,7 @@ avg_duration = total_duration // total_turns if total_turns > 0 else 0
 project_name = data[0].get("project", "Project") if data else "Project"
 
 # --- Count total human messages per date from JSONL transcripts ---
-project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(tokens_file))))  # project root
+project_dir = os.path.dirname(os.path.dirname(tracking_dir))  # project root
 # Claude Code slugifies paths as: replace every "/" with "-" (keeping leading slash → leading dash)
 transcripts_dir = os.path.expanduser(
     "~/.claude/projects/" + project_dir.replace("/", "-")
@@ -157,7 +168,7 @@ total_human_msgs = sum(human_by_date.values())
 total_trivial_msgs = sum(trivial_by_date.values())
 
 # --- Aggregate prompt data from key-prompts/ folder ---
-prompts_dir = os.path.join(os.path.dirname(tokens_file), "key-prompts")
+prompts_dir = os.path.join(tracking_dir, "key-prompts")
 prompt_files = sorted(glob.glob(os.path.join(prompts_dir, "????-??-??.md")))
 
 prompt_by_date = {}   # date -> {total, by_category}
@@ -186,6 +197,8 @@ cache_read_by_date_js = json.dumps([by_date[d]["cache_read"] for d in dates])
 opus_by_date_js = json.dumps([round(by_date[d]["opus_cost"], 4) for d in dates])
 sonnet_by_date_js = json.dumps([round(by_date[d]["sonnet_cost"], 4) for d in dates])
 duration_by_date_js = json.dumps([by_date[d]["duration"] for d in dates])
+input_by_date_js = json.dumps([by_date[d]["input"] for d in dates])
+cache_create_by_date_js = json.dumps([by_date[d]["cache_create"] for d in dates])
 
 cumul_labels_js = json.dumps([f"{c['date']} {c['session_id']}#{c['turn_index']}" for c in cumulative])
 cumul_values_js = json.dumps([c["cumulative_cost"] for c in cumulative])
@@ -296,11 +309,12 @@ donut_values_js = json.dumps(list(cat_totals.values()))
 donut_colors_js = json.dumps([CAT_COLORS.get(c, DEFAULT_COLOR) for c in cat_totals])
 
 # --- Agent data aggregation ---
-by_agent_type = defaultdict(lambda: {"cost": 0, "count": 0})
+by_agent_type = defaultdict(lambda: {"cost": 0, "count": 0, "turns": 0})
 for a in agent_data:
     t = a.get('agent_type', 'unknown')
     by_agent_type[t]["cost"]  += a.get('estimated_cost_usd', 0)
     by_agent_type[t]["count"] += 1
+    by_agent_type[t]["turns"] += a.get('turns', 0)
 
 agent_types_sorted = sorted(by_agent_type.keys(), key=lambda t: -by_agent_type[t]["cost"])
 total_agent_cost = sum(a.get('estimated_cost_usd', 0) for a in agent_data)
@@ -309,6 +323,11 @@ total_agent_invocations = len(agent_data)
 agent_labels_js = json.dumps(agent_types_sorted)
 agent_costs_js  = json.dumps([round(by_agent_type[t]["cost"], 4) for t in agent_types_sorted])
 agent_counts_js = json.dumps([by_agent_type[t]["count"] for t in agent_types_sorted])
+agent_cpt_js = json.dumps([
+    round(by_agent_type[t]["cost"] / by_agent_type[t]["turns"], 4)
+    if by_agent_type[t]["turns"] > 0 else 0
+    for t in agent_types_sorted
+])
 
 # Conditional HTML blocks
 if agent_data:
@@ -328,13 +347,18 @@ if agent_data:
       <h2>Invocations by agent type</h2>
       <canvas id="agentCount"></canvas>
     </div>
+    <div class="card">
+      <h2>Cost per turn by agent type</h2>
+      <canvas id="agentCPT"></canvas>
+    </div>
   </div>
 </div>
 
 '''
     agents_js_constants = f'''const AGENT_LABELS = {agent_labels_js};
 const AGENT_COSTS  = {agent_costs_js};
-const AGENT_COUNTS = {agent_counts_js};'''
+const AGENT_COUNTS = {agent_counts_js};
+const AGENT_CPT = {agent_cpt_js};'''
     agents_js_charts = '''
 new Chart(document.getElementById('agentCost'), {
   type: 'bar',
@@ -351,12 +375,327 @@ new Chart(document.getElementById('agentCount'), {
     datasets: [{ label: 'Invocations', data: AGENT_COUNTS,
       backgroundColor: '#fb923c', borderRadius: 4 }] },
   options: baseOpts
+});
+
+new Chart(document.getElementById('agentCPT'), {
+  type: 'bar',
+  data: { labels: AGENT_LABELS,
+    datasets: [{ label: 'Cost/turn', data: AGENT_CPT,
+      backgroundColor: '#fbbf24', borderRadius: 4 }] },
+  options: { ...baseOpts, plugins: { ...baseOpts.plugins,
+    tooltip: { callbacks: { label: ctx => ' $' + ctx.parsed.y.toFixed(4) + '/turn' } } } }
 });'''
 else:
     agents_stat_html = ''
     agents_section_html = ''
     agents_js_constants = ''
     agents_js_charts = ''
+
+# --- Friction data aggregation ---
+FRICTION_CAT_COLORS = {
+    "permission_denied": "#dc2626",
+    "hook_blocked":      "#b91c1c",
+    "cascade_error":     "#f97316",
+    "command_failed":    "#eab308",
+    "tool_error":        "#ef4444",
+    "correction":        "#8b5cf6",
+    "retry":             "#06b6d4",
+}
+FRICTION_DEFAULT_COLOR = "#94a3b8"
+
+friction_by_date = defaultdict(lambda: {"main": 0, "subagent": 0})
+friction_by_category = defaultdict(int)
+friction_by_tool = defaultdict(int)
+for fe in friction_data:
+    d = fe.get('date', 'unknown')
+    src = fe.get('source', 'main')
+    if src == 'subagent':
+        friction_by_date[d]["subagent"] += 1
+    else:
+        friction_by_date[d]["main"] += 1
+    friction_by_category[fe.get('category', 'unknown')] += 1
+    tn = fe.get('tool_name')
+    if tn:
+        friction_by_tool[tn] += 1
+
+friction_by_skill = defaultdict(int)
+for fe in friction_data:
+    sk = fe.get('skill')
+    if sk:
+        friction_by_skill[sk] += 1
+has_skill_data = bool(friction_by_skill)
+
+retry_events = [fe for fe in friction_data if fe.get('category') == 'retry']
+retry_total = len(retry_events)
+retry_resolved = sum(1 for fe in retry_events if fe.get('resolved') is True)
+retry_rate = round(retry_resolved / retry_total * 100, 1) if retry_total > 0 else 0
+
+total_friction = len(friction_data)
+friction_rate = round(total_friction / total_turns * 100, 1) if total_turns > 0 else 0
+
+friction_dates_sorted = sorted(friction_by_date.keys())
+friction_dates_js = json.dumps(friction_dates_sorted)
+friction_main_by_date_js = json.dumps([friction_by_date[d]["main"] for d in friction_dates_sorted])
+friction_sub_by_date_js = json.dumps([friction_by_date[d]["subagent"] for d in friction_dates_sorted])
+
+friction_cats_sorted = sorted(friction_by_category.keys(), key=lambda c: -friction_by_category[c])
+friction_cat_labels_js = json.dumps(friction_cats_sorted)
+friction_cat_values_js = json.dumps([friction_by_category[c] for c in friction_cats_sorted])
+friction_cat_colors_js = json.dumps([FRICTION_CAT_COLORS.get(c, FRICTION_DEFAULT_COLOR) for c in friction_cats_sorted])
+
+friction_tools_sorted = sorted(friction_by_tool.keys(), key=lambda t: -friction_by_tool[t])
+friction_tool_labels_js = json.dumps(friction_tools_sorted)
+friction_tool_values_js = json.dumps([friction_by_tool[t] for t in friction_tools_sorted])
+
+friction_skills_sorted = sorted(friction_by_skill.keys(), key=lambda s: -friction_by_skill[s])
+friction_skill_labels_js = json.dumps(friction_skills_sorted)
+friction_skill_values_js = json.dumps([friction_by_skill[s] for s in friction_skills_sorted])
+
+# Friction rate trend per day (events per 100 prompts)
+friction_rate_dates = sorted(set(friction_dates_sorted) & set(dates))
+friction_rate_values = []
+for d in friction_rate_dates:
+    day_friction = friction_by_date[d]["main"] + friction_by_date[d]["subagent"]
+    day_turns = by_date[d]["turns"] if d in by_date else 0
+    friction_rate_values.append(round(day_friction / day_turns * 100, 1) if day_turns > 0 else 0)
+friction_rate_dates_js = json.dumps(friction_rate_dates)
+friction_rate_values_js = json.dumps(friction_rate_values)
+
+if friction_data:
+    friction_stat_html = f'''  <div class="stat">
+    <div class="stat-label">Friction events</div>
+    <div class="stat-value">{total_friction}</div>
+    <div class="stat-sub">{friction_rate} per 100 prompts</div>
+  </div>'''
+    retry_stat_html = f'''  <div class="stat">
+    <div class="stat-label">Retry resolution</div>
+    <div class="stat-value">{retry_rate}%</div>
+    <div class="stat-sub">{retry_resolved} of {retry_total} retries succeeded</div>
+  </div>''' if retry_total > 0 else ''
+    friction_skill_card = '''
+    <div class="card">
+      <h2>Friction by skill</h2>
+      <canvas id="frictionSkill"></canvas>
+    </div>''' if has_skill_data else ''
+    friction_section_html = f'''<div class="section">
+  <div class="section-header friction">Friction</div>
+  <div class="grid">
+    <div class="card">
+      <h2>Friction per day</h2>
+      <canvas id="frictionDay"></canvas>
+    </div>
+    <div class="card">
+      <h2>Friction by category</h2>
+      <canvas id="frictionCat"></canvas>
+    </div>
+    <div class="card">
+      <h2>Friction by tool</h2>
+      <canvas id="frictionTool"></canvas>
+    </div>
+    <div class="card">
+      <h2>Friction rate trend</h2>
+      <canvas id="frictionRate"></canvas>
+    </div>{friction_skill_card}
+  </div>
+</div>
+
+'''
+    friction_js_constants = f'''const FRICTION_DATES = {friction_dates_js};
+const FRICTION_MAIN = {friction_main_by_date_js};
+const FRICTION_SUB = {friction_sub_by_date_js};
+const FRICTION_CAT_LABELS = {friction_cat_labels_js};
+const FRICTION_CAT_VALUES = {friction_cat_values_js};
+const FRICTION_CAT_COLORS = {friction_cat_colors_js};
+const FRICTION_TOOL_LABELS = {friction_tool_labels_js};
+const FRICTION_TOOL_VALUES = {friction_tool_values_js};
+const FRICTION_RATE_DATES = {friction_rate_dates_js};
+const FRICTION_RATE_VALUES = {friction_rate_values_js};''' + (f'''
+const FRICTION_SKILL_LABELS = {friction_skill_labels_js};
+const FRICTION_SKILL_VALUES = {friction_skill_values_js};''' if has_skill_data else '')
+    friction_js_charts = '''
+// Friction per day (stacked bar)
+new Chart(document.getElementById('frictionDay'), {
+  type: 'bar',
+  data: {
+    labels: FRICTION_DATES,
+    datasets: [
+      { label: 'Main session', data: FRICTION_MAIN, backgroundColor: '#ef4444', borderRadius: 2 },
+      { label: 'Subagent', data: FRICTION_SUB, backgroundColor: '#f97316', borderRadius: 2 }
+    ]
+  },
+  options: { ...baseOpts, scales: { ...baseOpts.scales,
+    x: { ...baseOpts.scales.x, stacked: true },
+    y: { ...baseOpts.scales.y, stacked: true } } }
+});
+
+// Friction by category (horizontal bar)
+new Chart(document.getElementById('frictionCat'), {
+  type: 'bar',
+  data: {
+    labels: FRICTION_CAT_LABELS,
+    datasets: [{ label: 'Events', data: FRICTION_CAT_VALUES,
+      backgroundColor: FRICTION_CAT_COLORS, borderRadius: 4 }]
+  },
+  options: { ...baseOpts, indexAxis: 'y' }
+});
+
+// Friction by tool (bar)
+new Chart(document.getElementById('frictionTool'), {
+  type: 'bar',
+  data: {
+    labels: FRICTION_TOOL_LABELS,
+    datasets: [{ label: 'Events', data: FRICTION_TOOL_VALUES,
+      backgroundColor: '#ef4444', borderRadius: 4 }]
+  },
+  options: baseOpts
+});
+
+// Friction rate trend (line)
+new Chart(document.getElementById('frictionRate'), {
+  type: 'line',
+  data: {
+    labels: FRICTION_RATE_DATES,
+    datasets: [{ label: 'Per 100 prompts', data: FRICTION_RATE_VALUES,
+      borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.15)',
+      fill: true, tension: 0.3, pointRadius: 3 }]
+  },
+  options: { ...baseOpts, plugins: { ...baseOpts.plugins,
+    tooltip: { callbacks: { label: ctx => ' ' + ctx.parsed.y + ' per 100 prompts' } } } }
+});''' + ('''
+
+// Friction by skill (horizontal bar)
+new Chart(document.getElementById('frictionSkill'), {
+  type: 'bar',
+  data: {
+    labels: FRICTION_SKILL_LABELS,
+    datasets: [{ label: 'Events', data: FRICTION_SKILL_VALUES,
+      backgroundColor: '#c084fc', borderRadius: 4 }]
+  },
+  options: { ...baseOpts, indexAxis: 'y' }
+});''' if has_skill_data else '')
+else:
+    friction_stat_html = ''
+    retry_stat_html = ''
+    friction_section_html = ''
+    friction_js_constants = ''
+    friction_js_charts = ''
+
+# --- Error tracking ---
+ERROR_CATEGORIES = {'tool_error', 'command_failed', 'cascade_error'}
+
+def classify_error(event):
+    detail = (event.get('detail') or '').strip()
+    if 'InputValidationError' in detail:
+        return 'validation_error'
+    if 'No such file' in detail or 'FileNotFoundError' in detail:
+        return 'file_not_found'
+    if 'timed out' in detail.lower() or 'timeout' in detail.lower():
+        return 'timeout'
+    if 'UnicodeDecodeError' in detail or 'encoding' in detail.lower():
+        return 'encoding_error'
+    if event.get('category') == 'command_failed':
+        import re as _re
+        m = _re.search(r'Exit code (\d+)', detail)
+        if m:
+            return f'exit_code_{m.group(1)}'
+    return 'generic'
+
+error_events = [fe for fe in friction_data if fe.get('category') in ERROR_CATEGORIES]
+
+error_by_type = defaultdict(int)
+error_by_tool = defaultdict(int)
+error_by_date = defaultdict(int)
+for ee in error_events:
+    error_by_type[classify_error(ee)] += 1
+    tn = ee.get('tool_name')
+    if tn:
+        error_by_tool[tn] += 1
+    error_by_date[ee.get('date', 'unknown')] += 1
+
+total_errors = len(error_events)
+error_rate = round(total_errors / total_turns * 100, 1) if total_turns > 0 else 0
+
+if error_events:
+    error_types_sorted = sorted(error_by_type.keys(), key=lambda t: -error_by_type[t])
+    error_tools_sorted = sorted(error_by_tool.keys(), key=lambda t: -error_by_tool[t])
+    error_dates_sorted = sorted(error_by_date.keys())
+
+    error_type_labels_js = json.dumps(error_types_sorted)
+    error_type_values_js = json.dumps([error_by_type[t] for t in error_types_sorted])
+    error_tool_labels_js = json.dumps(error_tools_sorted)
+    error_tool_values_js = json.dumps([error_by_tool[t] for t in error_tools_sorted])
+    error_dates_js = json.dumps(error_dates_sorted)
+    error_date_values_js = json.dumps([error_by_date[d] for d in error_dates_sorted])
+
+    error_stat_html = f'''  <div class="stat">
+    <div class="stat-label">Errors</div>
+    <div class="stat-value">{total_errors}</div>
+    <div class="stat-sub">{error_rate} per 100 prompts</div>
+  </div>'''
+    error_section_html = f'''<div class="section">
+  <div class="section-header errors">Errors</div>
+  <div class="grid">
+    <div class="card">
+      <h2>Error types</h2>
+      <canvas id="errorTypes"></canvas>
+    </div>
+    <div class="card">
+      <h2>Errors by tool</h2>
+      <canvas id="errorTools"></canvas>
+    </div>
+    <div class="card wide">
+      <h2>Error trend per day</h2>
+      <canvas id="errorTrend"></canvas>
+    </div>
+  </div>
+</div>
+
+'''
+    error_js_constants = f'''const ERROR_TYPE_LABELS = {error_type_labels_js};
+const ERROR_TYPE_VALUES = {error_type_values_js};
+const ERROR_TOOL_LABELS = {error_tool_labels_js};
+const ERROR_TOOL_VALUES = {error_tool_values_js};
+const ERROR_DATES = {error_dates_js};
+const ERROR_DATE_VALUES = {error_date_values_js};'''
+    error_js_charts = '''
+// Error types (horizontal bar)
+new Chart(document.getElementById('errorTypes'), {
+  type: 'bar',
+  data: {
+    labels: ERROR_TYPE_LABELS,
+    datasets: [{ label: 'Errors', data: ERROR_TYPE_VALUES,
+      backgroundColor: '#fb7185', borderRadius: 4 }]
+  },
+  options: { ...baseOpts, indexAxis: 'y' }
+});
+
+// Errors by tool (bar)
+new Chart(document.getElementById('errorTools'), {
+  type: 'bar',
+  data: {
+    labels: ERROR_TOOL_LABELS,
+    datasets: [{ label: 'Errors', data: ERROR_TOOL_VALUES,
+      backgroundColor: '#e11d48', borderRadius: 4 }]
+  },
+  options: baseOpts
+});
+
+// Error trend per day (line)
+new Chart(document.getElementById('errorTrend'), {
+  type: 'line',
+  data: {
+    labels: ERROR_DATES,
+    datasets: [{ label: 'Errors', data: ERROR_DATE_VALUES,
+      borderColor: '#e11d48', backgroundColor: 'rgba(225,29,72,0.15)',
+      fill: true, tension: 0.3, pointRadius: 3 }]
+  },
+  options: baseOpts
+});'''
+else:
+    error_stat_html = ''
+    error_section_html = ''
+    error_js_constants = ''
+    error_js_charts = ''
 
 html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -388,6 +727,8 @@ html = f"""<!DOCTYPE html>
   .section-header.time  {{ border-left: 3px solid #34d399; color: #34d399; }}
   .section-header.prompts {{ border-left: 3px solid #a78bfa; color: #a78bfa; }}
   .section-header.agents {{ border-left: 3px solid #f97316; color: #fb923c; }}
+  .section-header.friction {{ border-left: 3px solid #ef4444; color: #f87171; }}
+  .section-header.errors {{ border-left: 3px solid #e11d48; color: #fb7185; }}
   .grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }}
   .card {{ background: #1e2330; border: 1px solid #2d3748; border-radius: 10px;
            padding: 16px; }}
@@ -425,6 +766,11 @@ html = f"""<!DOCTYPE html>
     <div class="stat-sub">&nbsp;</div>
   </div>
   <div class="stat">
+    <div class="stat-label">Input tokens</div>
+    <div class="stat-value">{total_input:,}</div>
+    <div class="stat-sub">&nbsp;</div>
+  </div>
+  <div class="stat">
     <div class="stat-label">Cache read share</div>
     <div class="stat-value">{cache_pct}%</div>
     <div class="stat-sub">of all tokens</div>
@@ -445,6 +791,9 @@ html = f"""<!DOCTYPE html>
     <div class="stat-sub">key / non-trivial (higher = better)</div>
   </div>
 {agents_stat_html}
+{friction_stat_html}
+{retry_stat_html}
+{error_stat_html}
 </div>
 
 <div class="section">
@@ -471,10 +820,15 @@ html = f"""<!DOCTYPE html>
       <canvas id="modelStack"></canvas>
     </div>
 
+    <div class="card wide">
+      <h2>Token composition per day</h2>
+      <canvas id="tokenComp"></canvas>
+    </div>
+
   </div>
 </div>
 
-{agents_section_html}<div class="section">
+{agents_section_html}{friction_section_html}{error_section_html}<div class="section">
   <div class="section-header prompts">Key Prompts</div>
   <div class="grid">
 
@@ -552,6 +906,9 @@ const DATES = {dates_js};
 const COST_BY_DATE = {cost_by_date_js};
 const SESSIONS_BY_DATE = {sessions_by_date_js};
 const OUTPUT_BY_DATE = {output_by_date_js};
+const INPUT_BY_DATE = {input_by_date_js};
+const CACHE_CREATE_BY_DATE = {cache_create_by_date_js};
+const CACHE_READ_BY_DATE = {cache_read_by_date_js};
 const OPUS_BY_DATE = {opus_by_date_js};
 const SONNET_BY_DATE = {sonnet_by_date_js};
 const CUMUL_LABELS = {cumul_labels_js};
@@ -577,6 +934,8 @@ const SCATTER_DATA = {scatter_data_js};
 const TPM_DATA = {tpm_data_js};
 const DUR_HIST_RANGES = {dur_hist_ranges_js};
 {agents_js_constants}
+{friction_js_constants}
+{error_js_constants}
 
 function formatDuration(s) {{
   if (s <= 0) return '0s';
@@ -650,6 +1009,23 @@ new Chart(document.getElementById('modelStack'), {{
     y: {{ ...baseOpts.scales.y, stacked: true }} }},
     plugins: {{ ...baseOpts.plugins,
       tooltip: {{ callbacks: {{ label: ctx => ' $' + ctx.parsed.y.toFixed(2) }} }} }} }}
+}});
+
+// Token composition per day (stacked bar)
+new Chart(document.getElementById('tokenComp'), {{
+  type: 'bar',
+  data: {{
+    labels: DATES,
+    datasets: [
+      {{ label: 'Input', data: INPUT_BY_DATE, backgroundColor: '#6366f1', borderRadius: 2 }},
+      {{ label: 'Cache creation', data: CACHE_CREATE_BY_DATE, backgroundColor: '#f59e0b', borderRadius: 2 }},
+      {{ label: 'Cache read', data: CACHE_READ_BY_DATE, backgroundColor: '#22d3ee', borderRadius: 2 }},
+      {{ label: 'Output', data: OUTPUT_BY_DATE, backgroundColor: '#a78bfa', borderRadius: 2 }}
+    ]
+  }},
+  options: {{ ...baseOpts, scales: {{ ...baseOpts.scales,
+    x: {{ ...baseOpts.scales.x, stacked: true }},
+    y: {{ ...baseOpts.scales.y, stacked: true }} }} }}
 }});
 
 // Session duration per day
@@ -834,6 +1210,8 @@ new Chart(document.getElementById('promptStack'), {{
   }}
 }});
 {agents_js_charts}
+{friction_js_charts}
+{error_js_charts}
 </script>
 </body>
 </html>

@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Cross-platform replacement for init-templates.sh."""
 import sys
-import json
 import os
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import storage  # noqa: E402
+
 
 def main():
     if len(sys.argv) < 2:
@@ -12,20 +15,8 @@ def main():
     tracking_dir = sys.argv[1]
     os.makedirs(tracking_dir, exist_ok=True)
 
-    templates = {
-        'tokens.json': [],
-        'agents.json': [],
-    }
-
-    for filename, default in templates.items():
-        filepath = os.path.join(tracking_dir, filename)
-        if not os.path.exists(filepath):
-            with open(filepath, 'w', encoding='utf-8') as f:
-                json.dump(default, f, indent=2)
-                f.write('\n')
-            print(f"Created {filepath}")
-        else:
-            print(f"Skipped {filepath} (already exists)")
+    # Initialize SQLite database (replaces tokens.json / agents.json)
+    storage.init_db(tracking_dir)
 
     # Create key-prompts directory
     key_prompts_dir = os.path.join(tracking_dir, 'key-prompts')

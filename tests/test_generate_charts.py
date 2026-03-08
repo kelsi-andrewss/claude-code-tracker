@@ -650,6 +650,11 @@ class TestSectionOrder:
         tracking_dir, output_path = _setup_tracking(
             tmp_path, turns=turns, agents=agents, friction=friction,
             key_prompts=key_prompts)
+        # Add skill data for full section coverage
+        storage.replace_session_skills(tracking_dir, 's1', [{
+            'session_id': 's1', 'date': '2026-03-07', 'project': 'test-proj',
+            'skill_name': 'commit', 'duration_seconds': 5, 'success': 1,
+        }])
         result, html = _run_generate(tracking_dir, output_path)
 
         assert result.returncode == 0, f"stderr: {result.stderr}"
@@ -658,13 +663,14 @@ class TestSectionOrder:
         stats_pos = html.index('class="stats"')
         cost_pos = html.index('section-header cost')
         agents_pos = html.index('section-header agents')
+        skills_pos = html.index('section-header skills')
         friction_pos = html.index('section-header friction')
         errors_pos = html.index('section-header errors')
         prompts_pos = html.index('section-header prompts')
         time_pos = html.index('section-header time')
 
-        assert stats_pos < cost_pos < agents_pos < friction_pos < errors_pos < prompts_pos < time_pos, \
-            "Section order must be: Stats < Cost & Usage < Agents < Friction < Errors < Key Prompts < Time"
+        assert stats_pos < cost_pos < agents_pos < skills_pos < friction_pos < errors_pos < prompts_pos < time_pos, \
+            "Section order must be: Stats < Cost & Usage < Agents < Skills < Friction < Errors < Key Prompts < Time"
 
     def test_optional_sections_omitted_preserve_order(self, tmp_path):
         """Without agents/friction/errors, remaining sections keep order."""
@@ -687,6 +693,7 @@ class TestSectionOrder:
 
         # Optional sections should not appear
         assert 'section-header agents' not in html
+        assert 'section-header skills' not in html
         assert 'section-header friction' not in html
         assert 'section-header errors' not in html
 
@@ -745,3 +752,66 @@ class TestBasicSmoke:
 
         assert result.returncode == 0
         assert '80.0%' in html
+
+
+# ---------------------------------------------------------------------------
+# Skills section tests
+# ---------------------------------------------------------------------------
+
+class TestSkillsSection:
+
+    def test_renders_when_data_exists(self, tmp_path):
+        turns = [_make_turn('s1', 0, '2026-03-07')]
+        tracking_dir, output_path = _setup_tracking(tmp_path, turns=turns)
+        # Insert skill data directly
+        storage.replace_session_skills(tracking_dir, 's1', [{
+            'session_id': 's1', 'date': '2026-03-07', 'project': 'test-proj',
+            'skill_name': 'commit', 'duration_seconds': 5, 'success': 1,
+        }])
+        result, html = _run_generate(tracking_dir, output_path)
+
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        assert 'section-header skills' in html
+        assert 'skillCount' in html
+        assert 'skillSuccess' in html
+        assert 'skillTimeline' in html
+
+    def test_hidden_when_no_data(self, tmp_path):
+        turns = [_make_turn('s1', 0, '2026-03-07')]
+        tracking_dir, output_path = _setup_tracking(tmp_path, turns=turns)
+        result, html = _run_generate(tracking_dir, output_path)
+
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        assert 'section-header skills' not in html
+        assert 'SKILL_LABELS' not in html
+
+    def test_stat_card_shows_count(self, tmp_path):
+        turns = [_make_turn('s1', 0, '2026-03-07')]
+        tracking_dir, output_path = _setup_tracking(tmp_path, turns=turns)
+        storage.replace_session_skills(tracking_dir, 's1', [
+            {'session_id': 's1', 'date': '2026-03-07', 'project': 'test-proj',
+             'skill_name': 'commit', 'duration_seconds': 5, 'success': 1},
+            {'session_id': 's1', 'date': '2026-03-07', 'project': 'test-proj',
+             'skill_name': 'audit', 'duration_seconds': 10, 'success': 1},
+            {'session_id': 's1', 'date': '2026-03-07', 'project': 'test-proj',
+             'skill_name': 'commit', 'duration_seconds': 3, 'success': 0},
+        ])
+        result, html = _run_generate(tracking_dir, output_path)
+
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        assert 'Skill invocations' in html
+        assert '66.7%' in html  # 2 of 3 succeeded
+
+    def test_js_constants_present(self, tmp_path):
+        turns = [_make_turn('s1', 0, '2026-03-07')]
+        tracking_dir, output_path = _setup_tracking(tmp_path, turns=turns)
+        storage.replace_session_skills(tracking_dir, 's1', [{
+            'session_id': 's1', 'date': '2026-03-07', 'project': 'test-proj',
+            'skill_name': 'commit', 'duration_seconds': 5, 'success': 1,
+        }])
+        result, html = _run_generate(tracking_dir, output_path)
+
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        for const in ['SKILL_LABELS', 'SKILL_COUNTS', 'SKILL_SUCCESS', 'SKILL_FAIL',
+                       'SKILL_TIMELINE_DATES', 'SKILL_TIMELINE_VALUES']:
+            assert f'const {const}' in html, f"{const} not defined in JS"

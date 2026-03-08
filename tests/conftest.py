@@ -53,6 +53,43 @@ def write_transcript(lines, path):
     return path
 
 
+def make_skill_tool_use(skill_name, tool_id, timestamp, args=None):
+    """Build a Skill tool_use content block inside an assistant message."""
+    inp = {'skill': skill_name}
+    if args is not None:
+        inp['args'] = args
+    return {
+        'type': 'assistant',
+        'timestamp': timestamp,
+        'message': {
+            'role': 'assistant',
+            'content': [{
+                'type': 'tool_use',
+                'id': tool_id,
+                'name': 'Skill',
+                'input': inp,
+            }],
+        },
+    }
+
+
+def make_skill_tool_result(tool_id, timestamp, is_error=False, content=''):
+    """Build a tool_result block for a Skill invocation."""
+    return {
+        'type': 'user',
+        'timestamp': timestamp,
+        'message': {
+            'role': 'user',
+            'content': [{
+                'type': 'tool_result',
+                'tool_use_id': tool_id,
+                'is_error': is_error,
+                'content': content,
+            }],
+        },
+    }
+
+
 @pytest.fixture
 def simple_3turn_transcript(tmp_path):
     """3-turn opus transcript with pre-calculated expected values.

@@ -2,6 +2,8 @@
 import json
 import sys
 import os
+import re
+from datetime import date
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
@@ -63,6 +65,11 @@ class TestParseTranscript:
         msgs, usages, model = parse_transcript(path)
         assert len(msgs) == 2
         assert len(usages) == 1
+
+    def test_missing_file_raises(self):
+        import pytest
+        with pytest.raises(FileNotFoundError):
+            parse_transcript('/nonexistent/path/transcript.jsonl')
 
     def test_assistant_without_usage_not_in_usages(self, tmp_path):
         line_no_usage = {
@@ -171,6 +178,41 @@ class TestBuildTurnEntries:
         for entry in entries:
             assert re.match(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$',
                             entry['turn_timestamp'])
+
+    def test_negative_duration_clamped_to_zero(self, tmp_path):
+        """Assistant timestamp before user timestamp produces duration_seconds=0."""
+        # User at 00:10, assistant at 00:00 — negative gap
+        lines = [
+            make_user_line('hi', _ts(0, 10)),
+            make_assistant_line(_ts(0, 0), 'claude-opus-4-20250514', 100, 50),
+        ]
+        path = write_transcript(lines, str(tmp_path / 'neg_dur.jsonl'))
+        msgs, usages, model = parse_transcript(path)
+        entries = build_turn_entries(msgs, usages, model, 's1', 'p1')
+        assert len(entries) == 1
+        assert entries[0]['duration_seconds'] == 0
+
+    def test_malformed_timestamp_fallback(self, tmp_path):
+        """Garbage timestamp string falls back to raw value and today's date."""
+        garbage_ts = 'not-a-date'
+        msgs = [('user', garbage_ts), ('assistant', garbage_ts)]
+        usages = [{'input_tokens': 100, 'output_tokens': 50}]
+        entries = build_turn_entries(msgs, usages, 'claude-opus-4-20250514', 's1', 'p1')
+        assert len(entries) == 1
+        assert entries[0]['date'] == date.today().isoformat()
+        assert entries[0]['turn_timestamp'] == garbage_ts
+
+    def test_usage_dict_missing_keys(self, tmp_path):
+        """Usage dict with only input_tokens — missing keys default to 0."""
+        msgs = [('user', _ts(0, 0)), ('assistant', _ts(0, 5))]
+        usages = [{'input_tokens': 100}]
+        entries = build_turn_entries(msgs, usages, 'claude-opus-4-20250514', 's1', 'p1')
+        assert len(entries) == 1
+        assert entries[0]['input_tokens'] == 100
+        assert entries[0]['output_tokens'] == 0
+        assert entries[0]['cache_creation_tokens'] == 0
+        assert entries[0]['cache_read_tokens'] == 0
+        assert entries[0]['total_tokens'] == 100
 
     def test_sonnet_pricing_branch(self, sonnet_transcript):
         msgs, usages, model = parse_transcript(sonnet_transcript['path'])

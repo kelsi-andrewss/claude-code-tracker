@@ -71,3 +71,4 @@ if [[ -f "$OM_DB" ]]; then
   fi
 fi
 python3 "$SCRIPT_DIR/update-prompts-index.py" "$TRACKING_DIR" $OM_ARGS 2>/dev/null || true
+

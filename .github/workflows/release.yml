@@ -22,7 +22,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 18
-          registry-url: https://registry.npmjs.org
 
       - name: Run tests
         run: |
@@ -42,8 +41,6 @@ jobs:
 
       - name: Publish to npm
         run: npm publish --provenance --tag "$NPM_TAG"
-        env:
-          NODE_AUTH_TOKEN: ""
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2

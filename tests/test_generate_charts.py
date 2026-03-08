@@ -815,3 +815,117 @@ class TestSkillsSection:
         for const in ['SKILL_LABELS', 'SKILL_COUNTS', 'SKILL_SUCCESS', 'SKILL_FAIL',
                        'SKILL_TIMELINE_DATES', 'SKILL_TIMELINE_VALUES']:
             assert f'const {const}' in html, f"{const} not defined in JS"
+
+    def test_chart_data_values_correct(self, tmp_path):
+        """Verify SKILL_LABELS/COUNTS/SUCCESS/FAIL hold correct aggregated values."""
+        turns = [_make_turn('s1', 0, '2026-03-07')]
+        tracking_dir, output_path = _setup_tracking(tmp_path, turns=turns)
+        storage.replace_session_skills(tracking_dir, 's1', [
+            {'session_id': 's1', 'date': '2026-03-07', 'project': 'test-proj',
+             'skill_name': 'commit', 'duration_seconds': 5, 'success': 1},
+            {'session_id': 's1', 'date': '2026-03-07', 'project': 'test-proj',
+             'skill_name': 'commit', 'duration_seconds': 3, 'success': 0},
+            {'session_id': 's1', 'date': '2026-03-07', 'project': 'test-proj',
+             'skill_name': 'audit', 'duration_seconds': 10, 'success': 1},
+        ])
+        result, html = _run_generate(tracking_dir, output_path)
+
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+
+        labels = json.loads(re.search(r'const SKILL_LABELS = (\[.*?\]);', html).group(1))
+        counts = json.loads(re.search(r'const SKILL_COUNTS = (\[.*?\]);', html).group(1))
+        success = json.loads(re.search(r'const SKILL_SUCCESS = (\[.*?\]);', html).group(1))
+        fail = json.loads(re.search(r'const SKILL_FAIL = (\[.*?\]);', html).group(1))
+
+        data = {l: {'count': c, 'success': s, 'fail': f}
+                for l, c, s, f in zip(labels, counts, success, fail)}
+
+        assert data['commit'] == {'count': 2, 'success': 1, 'fail': 1}
+        assert data['audit'] == {'count': 1, 'success': 1, 'fail': 0}
+
+    def test_sorted_by_count_descending(self, tmp_path):
+        """SKILL_LABELS should be ordered by invocation count descending."""
+        turns = [_make_turn('s1', 0, '2026-03-07')]
+        tracking_dir, output_path = _setup_tracking(tmp_path, turns=turns)
+        storage.replace_session_skills(tracking_dir, 's1', [
+            # 3 ship
+            {'session_id': 's1', 'date': '2026-03-07', 'project': 'test-proj',
+             'skill_name': 'ship', 'duration_seconds': 1, 'success': 1},
+            {'session_id': 's1', 'date': '2026-03-07', 'project': 'test-proj',
+             'skill_name': 'ship', 'duration_seconds': 1, 'success': 1},
+            {'session_id': 's1', 'date': '2026-03-07', 'project': 'test-proj',
+             'skill_name': 'ship', 'duration_seconds': 1, 'success': 1},
+            # 2 commit
+            {'session_id': 's1', 'date': '2026-03-07', 'project': 'test-proj',
+             'skill_name': 'commit', 'duration_seconds': 1, 'success': 1},
+            {'session_id': 's1', 'date': '2026-03-07', 'project': 'test-proj',
+             'skill_name': 'commit', 'duration_seconds': 1, 'success': 1},
+            # 1 audit
+            {'session_id': 's1', 'date': '2026-03-07', 'project': 'test-proj',
+             'skill_name': 'audit', 'duration_seconds': 1, 'success': 1},
+        ])
+        result, html = _run_generate(tracking_dir, output_path)
+
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+
+        labels = json.loads(re.search(r'const SKILL_LABELS = (\[.*?\]);', html).group(1))
+        assert labels == ['ship', 'commit', 'audit']
+
+    def test_timeline_multi_date(self, tmp_path):
+        """SKILL_TIMELINE_DATES/VALUES should aggregate across multiple dates."""
+        turns = [
+            _make_turn('s1', 0, '2026-03-07'),
+            _make_turn('s2', 0, '2026-03-08'),
+        ]
+        tracking_dir, output_path = _setup_tracking(tmp_path, turns=turns)
+        # 2 skills on 03-07
+        storage.replace_session_skills(tracking_dir, 's1', [
+            {'session_id': 's1', 'date': '2026-03-07', 'project': 'test-proj',
+             'skill_name': 'commit', 'duration_seconds': 5, 'success': 1},
+            {'session_id': 's1', 'date': '2026-03-07', 'project': 'test-proj',
+             'skill_name': 'audit', 'duration_seconds': 3, 'success': 1},
+        ])
+        # 1 skill on 03-08
+        storage.replace_session_skills(tracking_dir, 's2', [
+            {'session_id': 's2', 'date': '2026-03-08', 'project': 'test-proj',
+             'skill_name': 'commit', 'duration_seconds': 2, 'success': 1},
+        ])
+        result, html = _run_generate(tracking_dir, output_path)
+
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+
+        dates = json.loads(re.search(r'const SKILL_TIMELINE_DATES = (\[.*?\]);', html).group(1))
+        values = json.loads(re.search(r'const SKILL_TIMELINE_VALUES = (\[.*?\]);', html).group(1))
+        timeline = dict(zip(dates, values))
+
+        assert timeline == {'2026-03-07': 2, '2026-03-08': 1}
+
+    def test_all_failures_zero_success_rate(self, tmp_path):
+        """When every skill invocation fails, success rate should be 0.0%."""
+        turns = [_make_turn('s1', 0, '2026-03-07')]
+        tracking_dir, output_path = _setup_tracking(tmp_path, turns=turns)
+        storage.replace_session_skills(tracking_dir, 's1', [
+            {'session_id': 's1', 'date': '2026-03-07', 'project': 'test-proj',
+             'skill_name': 'commit', 'duration_seconds': 5, 'success': 0},
+            {'session_id': 's1', 'date': '2026-03-07', 'project': 'test-proj',
+             'skill_name': 'audit', 'duration_seconds': 3, 'success': 0},
+        ])
+        result, html = _run_generate(tracking_dir, output_path)
+
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        assert '0.0%' in html
+
+    def test_all_successes_100_rate(self, tmp_path):
+        """When every skill invocation succeeds, success rate should be 100.0%."""
+        turns = [_make_turn('s1', 0, '2026-03-07')]
+        tracking_dir, output_path = _setup_tracking(tmp_path, turns=turns)
+        storage.replace_session_skills(tracking_dir, 's1', [
+            {'session_id': 's1', 'date': '2026-03-07', 'project': 'test-proj',
+             'skill_name': 'commit', 'duration_seconds': 5, 'success': 1},
+            {'session_id': 's1', 'date': '2026-03-07', 'project': 'test-proj',
+             'skill_name': 'audit', 'duration_seconds': 3, 'success': 1},
+        ])
+        result, html = _run_generate(tracking_dir, output_path)
+
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        assert '100.0%' in html

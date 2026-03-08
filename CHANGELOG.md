@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.4.0-beta.1] - 2026-03-08
+
+### Added
+- **SQLite storage backend** (`storage.py`) — replaces JSON file writes with `tracker.db`, includes transparent migration from existing JSON data.
+- **Skill invocation tracking** (`parse_skills.py`) — parses Skill tool_use/tool_result pairs from transcripts, records to `skills` table.
+- **Skills dashboard section** in `charts.html` — skill invocation counts and success/error rates, hidden when no skill data exists.
+- **Friction event parsing** (`parse_friction.py`) — detects tool errors, permission denials, and hook blocks from transcripts.
+- **`write-turns.py`, `write-agent.py`** — Python replacements for shell heredoc database writes, improving maintainability and Windows compatibility.
+- **`export-json.py`** — export SQLite data back to JSON format for portability and debugging.
+- **Test suite** — ~175 tests covering storage, parsing, chart generation, and E2E subprocess flows.
+- **CI/CD via GitHub Actions** — CI on push/PR, automated release on tag push (npm publish with OIDC provenance, GitHub releases, Homebrew tap updates for stable releases).
+
 ## [1.3.1] - 2026-02-24
 
 ### Added

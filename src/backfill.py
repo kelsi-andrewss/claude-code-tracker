@@ -1,25 +1,23 @@
 #!/usr/bin/env python3
 """
-Backfill historical Claude Code sessions into tokens.json.
+Backfill historical Claude Code sessions into tracking.db.
 
 Usage:
   python3 backfill.py <project_root>
 
 Scans ~/.claude/projects/<slug>/*.jsonl for transcripts belonging to the
 given project, parses token usage from each turn, and upserts entries to
-<project_root>/.claude/tracking/tokens.json. Sessions where all turns are
+<project_root>/.claude/tracking/tracking.db. Sessions where all turns are
 already present are skipped.
-
-Old-format entries (no turn_index field) are replaced with per-turn entries.
 """
 import sys, json, os, glob
 from datetime import datetime
 from platform_utils import get_transcripts_dir, slugify_path
+import storage
 
 project_root = os.path.abspath(sys.argv[1])
 project_name = os.path.basename(project_root)
 tracking_dir = os.path.join(project_root, ".claude", "tracking")
-tokens_file = os.path.join(tracking_dir, "tokens.json")
 
 # Claude Code slugifies project paths: replace "/" with "-"
 slug = slugify_path(project_root)
@@ -28,28 +26,6 @@ transcripts_dir = os.path.join(get_transcripts_dir(), slug)
 if not os.path.isdir(transcripts_dir):
     print("No transcript directory found, nothing to backfill.")
     sys.exit(0)
-
-# Load existing data
-data = []
-if os.path.exists(tokens_file):
-    try:
-        with open(tokens_file, encoding='utf-8') as f:
-            data = json.load(f)
-    except Exception:
-        data = []
-
-# Remove old-format entries (no turn_index) — they will be re-processed
-old_sessions = {e.get("session_id") for e in data if "turn_index" not in e}
-data = [e for e in data if "turn_index" in e]
-
-# Build index of existing (session_id, turn_index) pairs
-existing_turns = {(e.get("session_id"), e.get("turn_index")) for e in data}
-
-# Count turns per known session
-turns_per_session = {}
-for e in data:
-    sid = e.get("session_id")
-    turns_per_session[sid] = turns_per_session.get(sid, 0) + 1
 
 def parse_turns(jf):
     """Parse a JSONL transcript into per-turn entries. Returns list of dicts."""
@@ -201,27 +177,15 @@ for jf in jsonl_files:
         continue
 
     expected_count = len(turn_entries)
-    existing_count = turns_per_session.get(session_id, 0)
+    existing_count = storage.count_turns_for_session(tracking_dir, session_id)
 
-    # If all turns already present and session not in old-format set, skip
-    if existing_count >= expected_count and session_id not in old_sessions:
+    if existing_count >= expected_count:
         continue
 
-    # Upsert: replace any existing turns for this session with fresh data
-    data = [e for e in data if e.get("session_id") != session_id]
-    data.extend(turn_entries)
+    # Replace all turns for this session with fresh data
+    storage.replace_session_turns(tracking_dir, session_id, turn_entries)
     new_entries.extend(turn_entries)
     sessions_processed += 1
-
-# Sort by (date, session_id, turn_index)
-data.sort(key=lambda x: (x.get("date", ""), x.get("session_id", ""), x.get("turn_index", 0)))
-
-# Write updated tokens.json
-if new_entries:
-    os.makedirs(os.path.dirname(tokens_file), exist_ok=True)
-    with open(tokens_file, "w", encoding='utf-8') as f:
-        json.dump(data, f, indent=2)
-        f.write("\n")
 
 total_turns = len(new_entries)
 print(f"{sessions_processed} session{'s' if sessions_processed != 1 else ''} processed, {total_turns} turn{'s' if total_turns != 1 else ''} written.")
@@ -247,4 +211,4 @@ if friction_count:
 if new_entries or friction_count:
     script_dir = os.path.dirname(os.path.abspath(__file__))
     charts_html = os.path.join(tracking_dir, "charts.html")
-    os.system(f'python3 "{script_dir}/generate-charts.py" "{tokens_file}" "{charts_html}" 2>/dev/null')
+    os.system(f'python3 "{script_dir}/generate-charts.py" "{tracking_dir}" "{charts_html}" 2>/dev/null')

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
 Usage:
-  python3 cost-summary.py <tokens.json>
-  python3 cost-summary.py  (defaults to .claude/tracking/tokens.json in cwd's git root)
-  python3 cost-summary.py --chart  (open tracking charts in browser)
+  python3 cost-summary.py                          (auto-discover tracking dir)
+  python3 cost-summary.py /path/to/.claude/tracking (explicit tracking dir)
+  python3 cost-summary.py /path/to/tokens.json      (legacy compat)
+  python3 cost-summary.py --chart                    (open tracking charts in browser)
 """
 import sys
 import json
@@ -11,6 +12,10 @@ import os
 import webbrowser
 from collections import defaultdict
 from datetime import date
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPT_DIR)
+import storage
 
 def find_git_root():
     root = os.getcwd()
@@ -20,12 +25,12 @@ def find_git_root():
         root = os.path.dirname(root)
     return root
 
-def find_tokens_file():
+def find_tracking_dir():
     root = find_git_root()
-    path = os.path.join(root, ".claude", "tracking", "tokens.json")
-    if os.path.exists(path):
+    path = os.path.join(root, ".claude", "tracking")
+    if os.path.isdir(path):
         return path
-    sys.exit(f"No tokens.json found at {path}")
+    sys.exit(f"No tracking directory found at {path}")
 
 def format_duration(seconds):
     if seconds <= 0:
@@ -44,10 +49,16 @@ if "--chart" in sys.argv:
     webbrowser.open(f"file://{chart}")
     sys.exit(0)
 
-tokens_file = sys.argv[1] if len(sys.argv) > 1 else find_tokens_file()
+# Backward compat: accept tokens.json path or tracking dir
+arg = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] != "--chart" else None
+if arg and arg.endswith('.json'):
+    tracking_dir = os.path.dirname(os.path.abspath(arg))
+elif arg:
+    tracking_dir = os.path.abspath(arg)
+else:
+    tracking_dir = find_tracking_dir()
 
-with open(tokens_file, encoding='utf-8') as f:
-    data = json.load(f)
+data = storage.get_all_turns(tracking_dir)
 
 if not data:
     print("No sessions recorded yet.")
@@ -89,7 +100,8 @@ total_input = sum(e.get("input_tokens", 0) for e in data)
 # --- Print ---
 W = 60
 print("=" * W)
-print(f"  Cost Summary — {os.path.basename(os.path.dirname(os.path.dirname(tokens_file)))}")
+project_name = os.path.basename(os.path.dirname(os.path.dirname(tracking_dir)))
+print(f"  Cost Summary — {project_name}")
 print("=" * W)
 
 print(f"\nBy date:")
@@ -126,7 +138,7 @@ if days > 1:
     print(f"\n  Avg cost/day:      ${total_cost/days:>11.2f}  over {days} days")
 
 # --- Friction summary ---
-friction_file = os.path.join(os.path.dirname(tokens_file), "friction.json")
+friction_file = os.path.join(tracking_dir, "friction.json")
 if os.path.exists(friction_file):
     try:
         with open(friction_file, encoding='utf-8') as f:

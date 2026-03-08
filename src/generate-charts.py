@@ -1,28 +1,31 @@
 #!/usr/bin/env python3
 """
-Generates tracking/charts.html from tokens.json + key-prompts/ folder.
+Generates tracking/charts.html from SQLite storage + key-prompts/ folder.
 Called by stop-hook.sh after each session update.
 
-Usage: python3 generate-charts.py <tokens.json> <output.html>
+Usage: python3 generate-charts.py <tracking_dir_or_tokens.json> <output.html>
 """
 import sys, json, os, re, glob
 from collections import defaultdict
 
-tokens_file = sys.argv[1]
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPT_DIR)
+import storage
+
+arg1 = sys.argv[1]
 output_file = sys.argv[2]
 
-# Load agent data (optional — file may not exist on older installs)
-agents_file = os.path.join(os.path.dirname(os.path.abspath(tokens_file)), 'agents.json')
-agent_data = []
-if os.path.exists(agents_file):
-    try:
-        with open(agents_file, encoding='utf-8') as f:
-            agent_data = json.load(f)
-    except:
-        pass
+# Backward compat: accept either tokens.json path or tracking directory
+if arg1.endswith('.json'):
+    tracking_dir = os.path.dirname(os.path.abspath(arg1))
+else:
+    tracking_dir = os.path.abspath(arg1)
+
+data = storage.get_all_turns(tracking_dir)
+agent_data = storage.get_all_agents(tracking_dir)
 
 # Load friction data (optional — file may not exist on older installs)
-friction_file = os.path.join(os.path.dirname(os.path.abspath(tokens_file)), 'friction.json')
+friction_file = os.path.join(tracking_dir, 'friction.json')
 friction_data = []
 if os.path.exists(friction_file):
     try:
@@ -40,9 +43,6 @@ def format_duration(seconds):
     if h > 0:
         return f"{h}h {m}m"
     return f"{m}m {s}s"
-
-with open(tokens_file, encoding='utf-8') as f:
-    data = json.load(f)
 
 if not data:
     sys.exit(0)
@@ -101,7 +101,7 @@ avg_duration = total_duration // total_turns if total_turns > 0 else 0
 project_name = data[0].get("project", "Project") if data else "Project"
 
 # --- Count total human messages per date from JSONL transcripts ---
-project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(tokens_file))))  # project root
+project_dir = os.path.dirname(os.path.dirname(tracking_dir))  # project root
 # Claude Code slugifies paths as: replace every "/" with "-" (keeping leading slash → leading dash)
 transcripts_dir = os.path.expanduser(
     "~/.claude/projects/" + project_dir.replace("/", "-")
@@ -167,7 +167,7 @@ total_human_msgs = sum(human_by_date.values())
 total_trivial_msgs = sum(trivial_by_date.values())
 
 # --- Aggregate prompt data from key-prompts/ folder ---
-prompts_dir = os.path.join(os.path.dirname(tokens_file), "key-prompts")
+prompts_dir = os.path.join(tracking_dir, "key-prompts")
 prompt_files = sorted(glob.glob(os.path.join(prompts_dir, "????-??-??.md")))
 
 prompt_by_date = {}   # date -> {total, by_category}

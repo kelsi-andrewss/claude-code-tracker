@@ -57,7 +57,7 @@ format_duration, classify_error = _extract_functions()
 
 def _setup_tracking(tmp_path, turns=None, agents=None, friction=None,
                     key_prompts=None):
-    """Create a tracking dir with DB, optional friction.json, and key-prompts.
+    """Create a tracking dir with DB, optional friction, and key-prompts.
 
     Returns (tracking_dir, output_html_path).
     """
@@ -73,9 +73,13 @@ def _setup_tracking(tmp_path, turns=None, agents=None, friction=None,
             storage.append_agent(tracking_dir, a)
 
     if friction is not None:
-        friction_path = os.path.join(tracking_dir, 'friction.json')
-        with open(friction_path, 'w', encoding='utf-8') as f:
-            json.dump(friction, f)
+        from collections import defaultdict
+        by_session = defaultdict(list)
+        for fe in friction:
+            fe.setdefault('project', 'test-proj')
+            by_session[fe.get('session_id', 'unknown')].append(fe)
+        for sid, events in by_session.items():
+            storage.replace_session_friction(tracking_dir, sid, events)
 
     if key_prompts:
         prompts_dir = os.path.join(tracking_dir, 'key-prompts')

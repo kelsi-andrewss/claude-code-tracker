@@ -516,7 +516,7 @@ has_skill_data = bool(friction_by_skill)
 
 retry_events = [fe for fe in friction_data if fe.get('category') == 'retry']
 retry_total = len(retry_events)
-retry_resolved = sum(1 for fe in retry_events if fe.get('resolved') is True)
+retry_resolved = sum(1 for fe in retry_events if fe.get('resolved'))
 retry_rate = round(retry_resolved / retry_total * 100, 1) if retry_total > 0 else 0
 
 total_friction = len(friction_data)

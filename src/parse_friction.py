@@ -3,13 +3,17 @@
 Parse friction events from Claude Code JSONL transcripts.
 
 Usage:
-  python3 parse_friction.py <transcript_path> <friction_file> <session_id> <project> <source> \
+  python3 parse_friction.py <transcript_path> <tracking_dir> <session_id> <project> <source> \
     [--agent-type TYPE] [--agent-id ID]
 
 Friction categories (priority order, first match wins):
   permission_denied, hook_blocked, cascade_error, command_failed, tool_error, correction, retry
 """
 import sys, json, os, argparse
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPT_DIR)
+import storage
 
 
 def parse_friction(transcript_path, session_id, project, source,
@@ -237,34 +241,23 @@ def parse_friction(transcript_path, session_id, project, source,
     return events
 
 
-def upsert_friction(friction_file, session_id, new_events):
-    """Load existing friction.json, remove events for session_id, add new, sort, write."""
-    data = []
-    if os.path.exists(friction_file):
-        try:
-            with open(friction_file, encoding='utf-8') as f:
-                data = json.load(f)
-        except Exception:
-            data = []
+def upsert_friction(tracking_dir, session_id, new_events):
+    """Write friction events to SQLite via storage module.
 
-    data = [e for e in data if e.get('session_id') != session_id]
-    data.extend(new_events)
+    For backward compatibility, also accepts a friction.json path --
+    if tracking_dir ends with '.json', derive the tracking dir from it.
+    """
+    if tracking_dir.endswith('.json'):
+        tracking_dir = os.path.dirname(os.path.abspath(tracking_dir))
 
-    data.sort(key=lambda x: (x.get('date', ''), x.get('session_id', ''),
-                              x.get('turn_index', 0)))
-
-    os.makedirs(os.path.dirname(os.path.abspath(friction_file)), exist_ok=True)
-    with open(friction_file, 'w', encoding='utf-8') as f:
-        json.dump(data, f, indent=2)
-        f.write('\n')
-
-    return data
+    storage.replace_session_friction(tracking_dir, session_id, new_events)
+    return new_events
 
 
 def main():
     parser = argparse.ArgumentParser(description='Parse friction events from JSONL transcript')
     parser.add_argument('transcript_path')
-    parser.add_argument('friction_file')
+    parser.add_argument('tracking_dir')
     parser.add_argument('session_id')
     parser.add_argument('project')
     parser.add_argument('source')
@@ -275,11 +268,9 @@ def main():
     events = parse_friction(args.transcript_path, args.session_id, args.project,
                             args.source, args.agent_type, args.agent_id)
 
+    upsert_friction(args.tracking_dir, args.session_id, events)
     if events:
-        upsert_friction(args.friction_file, args.session_id, events)
         print(f"{len(events)} friction event(s) recorded.")
-    else:
-        upsert_friction(args.friction_file, args.session_id, [])
 
 
 if __name__ == '__main__':

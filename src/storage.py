@@ -67,6 +67,37 @@ SKILL_DEFAULTS = {
     "error_message": None,
 }
 
+COMPACTION_COLS = [
+    "session_id", "date", "project", "timestamp",
+    "trigger", "pre_tokens", "turn_index",
+]
+
+COMPACTION_DEFAULTS = {
+    "timestamp": None,
+    "trigger": "auto",
+    "pre_tokens": 0,
+    "turn_index": None,
+}
+
+FRICTION_COLS = [
+    "session_id", "date", "project", "timestamp", "turn_index",
+    "source", "agent_type", "agent_id", "category",
+    "tool_name", "skill", "model", "detail", "resolved",
+]
+
+FRICTION_DEFAULTS = {
+    "timestamp": None,
+    "turn_index": 0,
+    "source": None,
+    "agent_type": None,
+    "agent_id": None,
+    "tool_name": None,
+    "skill": None,
+    "model": None,
+    "detail": None,
+    "resolved": None,
+}
+
 SCHEMA_SQL = """\
 CREATE TABLE IF NOT EXISTS turns (
     session_id TEXT NOT NULL,
@@ -119,6 +150,40 @@ CREATE TABLE IF NOT EXISTS skills (
 CREATE INDEX IF NOT EXISTS idx_skills_session ON skills(session_id);
 CREATE INDEX IF NOT EXISTS idx_skills_name ON skills(skill_name);
 
+CREATE TABLE IF NOT EXISTS compactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    date TEXT NOT NULL,
+    project TEXT NOT NULL,
+    timestamp TEXT,
+    trigger TEXT NOT NULL DEFAULT 'auto',
+    pre_tokens INTEGER NOT NULL DEFAULT 0,
+    turn_index INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_compactions_session ON compactions(session_id);
+CREATE INDEX IF NOT EXISTS idx_compactions_date ON compactions(date);
+
+CREATE TABLE IF NOT EXISTS friction (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    date TEXT NOT NULL,
+    project TEXT NOT NULL,
+    timestamp TEXT,
+    turn_index INTEGER DEFAULT 0,
+    source TEXT,
+    agent_type TEXT,
+    agent_id TEXT,
+    category TEXT NOT NULL,
+    tool_name TEXT,
+    skill TEXT,
+    model TEXT,
+    detail TEXT,
+    resolved INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_friction_session ON friction(session_id);
+CREATE INDEX IF NOT EXISTS idx_friction_date ON friction(date);
+CREATE INDEX IF NOT EXISTS idx_friction_category ON friction(category);
+
 CREATE TABLE IF NOT EXISTS metadata (
     key TEXT PRIMARY KEY,
     value TEXT
@@ -167,6 +232,28 @@ def _insert_skills(conn: sqlite3.Connection, entries: list[dict]) -> None:
         conn.executemany(sql, rows)
 
 
+def _insert_compactions(conn: sqlite3.Connection, entries: list[dict]) -> None:
+    """INSERT compactions via executemany (always appends — autoincrement id)."""
+    placeholders = ", ".join(["?"] * len(COMPACTION_COLS))
+    sql = f"INSERT INTO compactions ({', '.join(COMPACTION_COLS)}) VALUES ({placeholders})"
+    rows = []
+    for e in entries:
+        rows.append(tuple(e.get(col, COMPACTION_DEFAULTS.get(col)) for col in COMPACTION_COLS))
+    if rows:
+        conn.executemany(sql, rows)
+
+
+def _insert_friction(conn: sqlite3.Connection, entries: list[dict]) -> None:
+    """INSERT friction via executemany (always appends — autoincrement id)."""
+    placeholders = ", ".join(["?"] * len(FRICTION_COLS))
+    sql = f"INSERT INTO friction ({', '.join(FRICTION_COLS)}) VALUES ({placeholders})"
+    rows = []
+    for e in entries:
+        rows.append(tuple(e.get(col, FRICTION_DEFAULTS.get(col)) for col in FRICTION_COLS))
+    if rows:
+        conn.executemany(sql, rows)
+
+
 def _maybe_migrate(conn: sqlite3.Connection, tracking_dir: str) -> None:
     """One-time migration from JSON files to SQLite.
 
@@ -200,6 +287,16 @@ def _maybe_migrate(conn: sqlite3.Connection, tracking_dir: str) -> None:
         except (json.JSONDecodeError, OSError):
             pass
 
+    friction_path = os.path.join(tracking_dir, "friction.json")
+    if os.path.exists(friction_path):
+        try:
+            with open(friction_path, encoding="utf-8") as f:
+                data = json.load(f)
+            if data:
+                _insert_friction(conn, data)
+        except (json.JSONDecodeError, OSError):
+            pass
+
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
         "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
@@ -212,7 +309,7 @@ def _maybe_migrate(conn: sqlite3.Connection, tracking_dir: str) -> None:
     conn.commit()
 
     # Rename originals so migration won't re-run even without the metadata check
-    for path in (tokens_path, agents_path):
+    for path in (tokens_path, agents_path, friction_path):
         if os.path.exists(path):
             try:
                 os.rename(path, path + ".migrated")
@@ -316,6 +413,50 @@ def get_all_skills(tracking_dir: str) -> list[dict]:
     """Return all skill rows as dicts (without the autoincrement id), ordered by id."""
     with get_db(tracking_dir) as conn:
         rows = conn.execute("SELECT * FROM skills ORDER BY id").fetchall()
+    result = []
+    for r in rows:
+        d = dict(r)
+        d.pop("id", None)
+        result.append(d)
+    return result
+
+
+def replace_session_compactions(
+    tracking_dir: str, session_id: str, entries: list[dict]
+) -> None:
+    """Delete all compactions for a session and insert replacements atomically."""
+    with get_db(tracking_dir) as conn:
+        conn.execute("DELETE FROM compactions WHERE session_id = ?", (session_id,))
+        _insert_compactions(conn, entries)
+        conn.commit()
+
+
+def get_all_compactions(tracking_dir: str) -> list[dict]:
+    """Return all compaction rows as dicts (without the autoincrement id), ordered by id."""
+    with get_db(tracking_dir) as conn:
+        rows = conn.execute("SELECT * FROM compactions ORDER BY id").fetchall()
+    result = []
+    for r in rows:
+        d = dict(r)
+        d.pop("id", None)
+        result.append(d)
+    return result
+
+
+def replace_session_friction(
+    tracking_dir: str, session_id: str, entries: list[dict]
+) -> None:
+    """Delete all friction for a session and insert replacements atomically."""
+    with get_db(tracking_dir) as conn:
+        conn.execute("DELETE FROM friction WHERE session_id = ?", (session_id,))
+        _insert_friction(conn, entries)
+        conn.commit()
+
+
+def get_all_friction(tracking_dir: str) -> list[dict]:
+    """Return all friction rows as dicts (without the autoincrement id), ordered by id."""
+    with get_db(tracking_dir) as conn:
+        rows = conn.execute("SELECT * FROM friction ORDER BY id").fetchall()
     result = []
     for r in rows:
         d = dict(r)

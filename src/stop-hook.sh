@@ -54,11 +54,15 @@ fi
 python3 "$SCRIPT_DIR/write-turns.py" "$TRANSCRIPT" "$TRACKING_DIR" "$SESSION_ID" "$(basename "$PROJECT_ROOT")"
 
 # Parse friction events from JSONL
-python3 "$SCRIPT_DIR/parse_friction.py" "$TRANSCRIPT" "$TRACKING_DIR/friction.json" \
+python3 "$SCRIPT_DIR/parse_friction.py" "$TRANSCRIPT" "$TRACKING_DIR" \
   "$SESSION_ID" "$(basename "$PROJECT_ROOT")" "main" 2>/dev/null || true
 
 # Parse skill invocations from JSONL
 python3 "$SCRIPT_DIR/parse_skills.py" "$TRANSCRIPT" "$TRACKING_DIR" \
+  "$SESSION_ID" "$(basename "$PROJECT_ROOT")" 2>/dev/null || true
+
+# Parse context compaction events from JSONL
+python3 "$SCRIPT_DIR/parse_compactions.py" "$TRANSCRIPT" "$TRACKING_DIR" \
   "$SESSION_ID" "$(basename "$PROJECT_ROOT")" 2>/dev/null || true
 
 # Regenerate charts

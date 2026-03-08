@@ -3,6 +3,7 @@ import sys, os, json, tempfile, pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from parse_friction import parse_friction, upsert_friction
+import storage
 
 
 # ---------------------------------------------------------------------------
@@ -410,93 +411,92 @@ class TestParseFriction:
 
 class TestUpsertFriction:
 
-    def test_creates_file_when_missing(self, tmp_path):
-        friction_file = str(tmp_path / 'friction.json')
+    def test_writes_to_sqlite(self, tmp_path):
+        tracking_dir = str(tmp_path / 'tracking')
+        os.makedirs(tracking_dir)
+        storage.init_db(tracking_dir)
         events = [{'session_id': 's1', 'date': '2026-03-07', 'turn_index': 0,
-                    'category': 'tool_error'}]
-        result = upsert_friction(friction_file, 's1', events)
+                    'category': 'tool_error', 'project': 'test'}]
+        upsert_friction(tracking_dir, 's1', events)
+        result = storage.get_all_friction(tracking_dir)
         assert len(result) == 1
-        assert os.path.exists(friction_file)
-        with open(friction_file) as f:
-            data = json.load(f)
-        assert len(data) == 1
+        assert result[0]['category'] == 'tool_error'
 
     def test_replaces_events_for_same_session(self, tmp_path):
-        friction_file = str(tmp_path / 'friction.json')
-        # First upsert
+        tracking_dir = str(tmp_path / 'tracking')
+        os.makedirs(tracking_dir)
+        storage.init_db(tracking_dir)
         events_v1 = [
             {'session_id': 's1', 'date': '2026-03-07', 'turn_index': 0,
-             'category': 'tool_error'},
+             'category': 'tool_error', 'project': 'test'},
             {'session_id': 's1', 'date': '2026-03-07', 'turn_index': 1,
-             'category': 'correction'},
+             'category': 'correction', 'project': 'test'},
         ]
-        upsert_friction(friction_file, 's1', events_v1)
-
-        # Second upsert with different events for same session
+        upsert_friction(tracking_dir, 's1', events_v1)
         events_v2 = [
             {'session_id': 's1', 'date': '2026-03-07', 'turn_index': 0,
-             'category': 'command_failed'},
+             'category': 'command_failed', 'project': 'test'},
         ]
-        result = upsert_friction(friction_file, 's1', events_v2)
+        upsert_friction(tracking_dir, 's1', events_v2)
+        result = storage.get_all_friction(tracking_dir)
         assert len(result) == 1
         assert result[0]['category'] == 'command_failed'
 
     def test_preserves_other_sessions(self, tmp_path):
-        friction_file = str(tmp_path / 'friction.json')
-        # Session 1
-        upsert_friction(friction_file, 's1', [
+        tracking_dir = str(tmp_path / 'tracking')
+        os.makedirs(tracking_dir)
+        storage.init_db(tracking_dir)
+        upsert_friction(tracking_dir, 's1', [
             {'session_id': 's1', 'date': '2026-03-07', 'turn_index': 0,
-             'category': 'tool_error'},
+             'category': 'tool_error', 'project': 'test'},
         ])
-        # Session 2
-        upsert_friction(friction_file, 's2', [
+        upsert_friction(tracking_dir, 's2', [
             {'session_id': 's2', 'date': '2026-03-07', 'turn_index': 0,
-             'category': 'correction'},
+             'category': 'correction', 'project': 'test'},
         ])
-        with open(friction_file) as f:
-            data = json.load(f)
-        sessions = {e['session_id'] for e in data}
+        result = storage.get_all_friction(tracking_dir)
+        sessions = {e['session_id'] for e in result}
         assert sessions == {'s1', 's2'}
 
     def test_empty_events_clears_session(self, tmp_path):
-        friction_file = str(tmp_path / 'friction.json')
-        upsert_friction(friction_file, 's1', [
+        tracking_dir = str(tmp_path / 'tracking')
+        os.makedirs(tracking_dir)
+        storage.init_db(tracking_dir)
+        upsert_friction(tracking_dir, 's1', [
             {'session_id': 's1', 'date': '2026-03-07', 'turn_index': 0,
-             'category': 'tool_error'},
+             'category': 'tool_error', 'project': 'test'},
         ])
-        upsert_friction(friction_file, 's1', [])
-        with open(friction_file) as f:
-            data = json.load(f)
-        assert len(data) == 0
+        upsert_friction(tracking_dir, 's1', [])
+        result = storage.get_all_friction(tracking_dir)
+        assert len(result) == 0
 
-    def test_sorted_by_date_session_turn(self, tmp_path):
-        friction_file = str(tmp_path / 'friction.json')
-        upsert_friction(friction_file, 's2', [
-            {'session_id': 's2', 'date': '2026-03-08', 'turn_index': 0,
-             'category': 'tool_error'},
-        ])
-        upsert_friction(friction_file, 's1', [
-            {'session_id': 's1', 'date': '2026-03-07', 'turn_index': 0,
-             'category': 'correction'},
-        ])
-        with open(friction_file) as f:
-            data = json.load(f)
-        assert data[0]['date'] == '2026-03-07'
-        assert data[1]['date'] == '2026-03-08'
+    def test_backward_compat_json_path(self, tmp_path):
+        """Passing a friction.json path should still work by deriving tracking_dir."""
+        tracking_dir = str(tmp_path / 'tracking')
+        os.makedirs(tracking_dir)
+        storage.init_db(tracking_dir)
+        friction_file = os.path.join(tracking_dir, 'friction.json')
+        events = [{'session_id': 's1', 'date': '2026-03-07', 'turn_index': 0,
+                    'category': 'tool_error', 'project': 'test'}]
+        upsert_friction(friction_file, 's1', events)
+        result = storage.get_all_friction(tracking_dir)
+        assert len(result) == 1
 
-    def test_handles_corrupt_friction_file(self, tmp_path):
-        friction_file = str(tmp_path / 'friction.json')
+    def test_json_migration(self, tmp_path):
+        """If friction.json exists, it gets migrated to SQLite on first access and renamed."""
+        tracking_dir = str(tmp_path / 'tracking')
+        os.makedirs(tracking_dir)
+        # Write a friction.json with some data
+        friction_file = os.path.join(tracking_dir, 'friction.json')
+        existing = [{'session_id': 's-old', 'date': '2026-03-06', 'turn_index': 0,
+                      'category': 'tool_error', 'project': 'test'}]
         with open(friction_file, 'w') as f:
-            f.write('not json{{{')
-        events = [{'session_id': 's1', 'date': '2026-03-07', 'turn_index': 0,
-                    'category': 'tool_error'}]
-        result = upsert_friction(friction_file, 's1', events)
+            json.dump(existing, f)
+        # init_db + get_db should trigger migration via _maybe_migrate
+        storage.init_db(tracking_dir)
+        result = storage.get_all_friction(tracking_dir)
         assert len(result) == 1
-
-    def test_creates_nested_directories(self, tmp_path):
-        friction_file = str(tmp_path / 'deep' / 'nested' / 'friction.json')
-        events = [{'session_id': 's1', 'date': '2026-03-07', 'turn_index': 0,
-                    'category': 'tool_error'}]
-        result = upsert_friction(friction_file, 's1', events)
-        assert len(result) == 1
-        assert os.path.exists(friction_file)
+        assert result[0]['session_id'] == 's-old'
+        # Original file should be renamed
+        assert os.path.exists(friction_file + '.migrated')
+        assert not os.path.exists(friction_file)
